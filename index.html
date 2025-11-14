@@ -67,7 +67,6 @@
         /* 调整不同位置的信息显示 */
         #player-area-top .player-info { bottom: 0.5rem; }
         #player-area-bottom .player-info { top: 0.5rem; }
-        /* (修复) 左右玩家信息现在不旋转了，因为手牌是堆叠的 */
         #player-area-left .player-info { top: 0.5rem; }
         #player-area-right .player-info { top: 0.5rem; }
 
@@ -79,8 +78,6 @@
             gap: 0.5rem;
         }
         
-        /* (修复) 移除左右玩家的 flex-direction: column */
-
         /* 卡片 */
         .card {
             width: 64px;
@@ -97,7 +94,7 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            overflow: hidden; /* 确保内容不溢出 */
+            overflow: hidden; 
         }
         .card.face-down {
             background-color: #3B82F6;
@@ -112,17 +109,15 @@
         .card[data-suit="♥"], .card[data-suit="♦"] { color: #EF4444; }
         .card[data-suit="♠"], .card[data-suit="♣"] { color: #1F2937; }
         
-        /* (修复) 癞子牌 (包括被代替的牌) 的特殊颜色 */
         .card.laizi {
-            color: #1F2937; /* 黑色 */
-            border: 3px solid #FCD34D; /* 粗黄边 */
-            background-color: #FEF9C3; /* 浅黄底色 */
+            color: #1F2937; 
+            border: 3px solid #FCD34D; 
+            background-color: #FEF9C3; 
         }
-        /* (修复) 确保真·大小王的颜色正确 */
-        .card[data-value="17"] { color: #EF4444; } /* 大王 红色 */
-        .card[data-value="17"].laizi { border-color: #EF4444; } /* 红色边框 */
-        .card[data-value="16"] { color: #1F2937; } /* 小王 黑色 */
-        .card[data-value="16"].laizi { border-color: #1F2937; } /* 黑色边框 */
+        .card[data-value="17"] { color: #EF4444; } 
+        .card[data-value="17"].laizi { border-color: #EF4444; } 
+        .card[data-value="16"] { color: #1F2937; } 
+        .card[data-value="16"].laizi { border-color: #1F2937; } 
 
 
         /* 玩家自己的手牌 */
@@ -131,19 +126,18 @@
         }
         #player-hand .card.selected {
             transform: translateY(-15px);
-            border: 3px solid #3B82F6; /* 选中时改用蓝边 */
+            border: 3px solid #3B82F6; 
         }
         
         /* 桌面中央 */
         #table-area {
-            position: relative; /* (新) 用于定位底分 */
+            position: relative; 
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             gap: 1rem;
         }
-        /* (新) 底分显示 */
         #bet-info {
             position: absolute;
             top: 0;
@@ -203,6 +197,22 @@
             text-align: center;
             max-width: 400px;
             width: 90%;
+        }
+        
+        /* (新) 大厅自定义输入 */
+        .config-input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #D1D5DB;
+            border-radius: 0.375rem;
+            text-align: center;
+        }
+        .config-label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+            text-align: left;
+            font-size: 0.875rem;
         }
         
         /* 按钮 */
@@ -273,7 +283,6 @@
         </div>
 
         <div id="table-area">
-            <!-- (新) 底分 -->
             <div id="bet-info">底分: <span id="base-bet-display">100</span></div>
             
             <div id="draw-pile-container">
@@ -313,6 +322,19 @@
         <div class="modal">
             <h2 class="text-2xl font-bold mb-4">干瞪眼 (在线版)</h2>
             <p class="mb-2">你的用户 ID: <strong id="user-id-display" class="text-xs break-all"></strong></p>
+            
+            <!-- (新) 自定义积分 -->
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label for="initial-score-input" class="config-label">初始积分:</label>
+                    <input id="initial-score-input" type="number" value="10000" class="config-input">
+                </div>
+                <div>
+                    <label for="base-bet-input" class="config-label">基础底分:</label>
+                    <input id="base-bet-input" type="number" value="100" class="config-input">
+                </div>
+            </div>
+            
             <div class="flex flex-col gap-4">
                 <button id="create-room-btn" class="btn btn-green" disabled>创建房间</button>
                 <hr>
@@ -345,13 +367,11 @@
             <h2 id="game-over-title" class="text-3xl font-bold mb-4">游戏结束</h2>
             <p id="game-over-message" class="text-lg mb-6">玩家 1 赢了!</p>
             
-            <!-- (新) 积分结算 -->
             <div id="score-recap" class="mb-6 text-left">
                 <!-- e.g. 玩家A: 10000 (+1000) -->
             </div>
             
             <button id="back-to-lobby-btn" class="btn btn-red">返回大厅</button>
-            <!-- (新) 下一局按钮 -->
             <button id="next-game-btn" class="btn btn-blue ml-2 hidden">下一局 (仅房主)</button>
         </div>
     </div>
@@ -388,6 +408,8 @@
         const joinRoomBtn = document.getElementById('join-room-btn');
         const playButton = document.getElementById('play-button');
         const passDrawButton = document.getElementById('pass-draw-button');
+        const initialScoreInput = document.getElementById('initial-score-input');
+        const baseBetInput = document.getElementById('base-bet-input');
 
         // --- 牌型定义 ---
         const SUITS = ['♦', '♣', '♥', '♠']; // 方片(小) -> 黑桃(大)
@@ -405,9 +427,9 @@
             INVALID: 'INVALID', SINGLE: 'SINGLE', PAIR: 'PAIR', TRIO: 'TRIO',
             FULL_HOUSE: 'FULL_HOUSE', 
             STRAIGHT: 'STRAIGHT', 
-            CONSECUTIVE_PAIRS: 'CONSECUTIVE_PAIRS', // (新) 连对
+            CONSECUTIVE_PAIRS: 'CONSECUTIVE_PAIRS', 
             BOMB: 'BOMB',
-            ROCKET: 'ROCKET' // 王炸
+            ROCKET: 'ROCKET' 
         };
 
         // --- 1. 初始化 Firebase ---
@@ -505,11 +527,12 @@
                     }
                     
                     if (!roomData.players.some(p => p.uid === userId)) {
+                        // (新) 加入时使用房主设置的初始积分
                         const newPlayer = { 
                             uid: userId, 
                             name: `玩家 ${roomData.players.length + 1}`, 
                             cardCount: 0, 
-                            score: 10000 
+                            score: roomData.initialScore || 10000 // (新)
                         };
                         transaction.update(roomRef, {
                             players: arrayUnion(newPlayer),
@@ -572,6 +595,10 @@
             btn.disabled = true;
             btn.textContent = "创建中...";
             
+            // (新) 读取自定义积分
+            const initialScore = parseInt(initialScoreInput.value, 10) || 10000;
+            const baseBet = parseInt(baseBetInput.value, 10) || 100;
+            
             const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
             const roomRef = doc(db, paths.room(roomId));
             
@@ -582,7 +609,7 @@
                     uid: userId, 
                     name: `玩家 1`, 
                     cardCount: 0, 
-                    score: 10000 
+                    score: initialScore // (新)
                 }], 
                 status: "waiting", 
                 drawPile: [],
@@ -597,7 +624,9 @@
                 winner: null,
                 gameNumber: 1, 
                 bombCount: 0,  
-                baseBet: 100,  
+                baseBet: baseBet,  // (新)
+                initialScore: initialScore, // (新)
+                playHistory: [], // (新)
                 smallestCard: null, 
                 smallestCardPlayerIndex: 0 
             };
@@ -649,7 +678,7 @@
                             uid: userId, 
                             name: `玩家 ${roomData.players.length + 1}`, 
                             cardCount: 0,
-                            score: 10000 
+                            score: roomData.initialScore || 10000 // (新)
                         };
                         transaction.update(roomRef, {
                             players: arrayUnion(newPlayer),
@@ -672,7 +701,6 @@
         async function joinRoom(roomId) {
             currentRoomId = roomId;
             
-            // (修复) 确保在重新订阅前清理旧的
             if (gameUnsubscribe) gameUnsubscribe();
             if (handUnsubscribe) handUnsubscribe();
 
@@ -878,7 +906,9 @@
                 }
                 
                 document.getElementById('draw-pile-count').textContent = `剩余: ${roomData.drawPile.length}`;
-                document.getElementById('base-bet-display').textContent = roomData.baseBet || 100; 
+                // (新) 计算实时底分 (基础 x 炸弹)
+                const realBaseBet = (roomData.baseBet || 100) * Math.pow(2, roomData.bombCount || 0);
+                document.getElementById('base-bet-display').textContent = realBaseBet; 
                 
                 const lastPlayArea = document.getElementById('last-play-area');
                 lastPlayArea.innerHTML = '';
@@ -933,6 +963,7 @@
                     }
                     
                     // (修复 Bug 2) 强制摸牌后, 必须出牌, 不能"过"
+                    // (isGameStart=false, isNewRound=false, currentPlay=null)
                     const isFreePlayAfterDraw = !isNewRound && roomData.currentPlay === null;
                     if (isFreePlayAfterDraw && !isGameStart) {
                         passDrawButton.disabled = true; 
@@ -949,11 +980,25 @@
             } else if (roomData.status === "finished") {
                 const scoreRecapEl = document.getElementById('score-recap');
                 scoreRecapEl.innerHTML = '';
+                // (新) 计算积分变化
+                const oldScores = roomData.oldPlayers.reduce((acc, p) => {
+                   acc[p.uid] = p.score;
+                   return acc;
+                }, {});
+
                 roomData.players.forEach(p => {
+                    const oldScore = oldScores[p.uid] || p.score;
+                    const scoreChange = p.score - oldScore;
                     const pEl = document.createElement('p');
-                    pEl.textContent = `${p.name}: ${p.score} 分`;
-                    if (p.uid === roomData.winner) {
+                    
+                    if (scoreChange > 0) {
+                        pEl.textContent = `${p.name}: ${p.score} ( +${scoreChange} )`;
                         pEl.classList.add('font-bold', 'text-green-600');
+                    } else if (scoreChange < 0) {
+                        pEl.textContent = `${p.name}: ${p.score} ( ${scoreChange} )`;
+                        pEl.classList.add('text-red-600');
+                    } else {
+                        pEl.textContent = `${p.name}: ${p.score} ( 0 )`;
                     }
                     scoreRecapEl.appendChild(pEl);
                 });
@@ -971,7 +1016,8 @@
                     nextGameBtn.classList.add('hidden');
                 }
                 
-                // (修复 Bug 1) 不再停止监听
+                // (修复 Bug 1) 不再停止监听, 而是重新订阅
+                joinRoom(currentRoomId);
             }
         }
         
@@ -1146,11 +1192,14 @@
                     isNewRound: true,
                     lastPlayedCards: [],
                     displayCards: [], 
+                    lastPlayerId: null, // (修复 Bug 1)
                     currentPlay: null,
                     log: arrayUnion(`第 ${ (roomData.gameNumber || 1) + 1 } 局游戏开始！`),
                     winner: null,
                     bombCount: 0,
-                    baseBet: 100,
+                    baseBet: roomData.baseBet || 100, // 保留上一局的底分设置
+                    initialScore: roomData.initialScore || 10000, // 保留
+                    playHistory: [], // (新)
                     gameNumber: (roomData.gameNumber || 1) + 1
                 });
                 
@@ -1174,13 +1223,22 @@
                 const baseBet = roomData.baseBet || 100;
                 const winnerId = roomData.winner;
                 
+                // (新) 计算春天
+                const uniquePlayers = [...new Set(roomData.playHistory || [])];
+                const isSpring = (uniquePlayers.length === 1 && uniquePlayers[0] === winnerId);
+                
+                // (新) 计算最终底分
+                const bombMultiplier = Math.pow(2, roomData.bombCount || 0);
+                const springMultiplier = isSpring ? 2 : 1;
+                const finalBet = baseBet * bombMultiplier * springMultiplier;
+                
                 let totalGain = 0;
                 const newScores = {};
                 roomData.players.forEach(p => newScores[p.uid] = p.score); 
 
                 roomData.players.forEach(p => {
                     if (p.uid !== winnerId) {
-                        const loss = p.cardCount * baseBet;
+                        const loss = p.cardCount * finalBet;
                         newScores[p.uid] -= loss;
                         totalGain += loss;
                     }
@@ -1196,7 +1254,8 @@
                 const roomRef = doc(db, paths.room(roomData.roomId));
                 await updateDoc(roomRef, { 
                     status: "finished", 
-                    players: updatedPlayers 
+                    players: updatedPlayers,
+                    oldPlayers: roomData.players // (新) 存储旧积分用于对比
                 });
                 
             } catch (error) {
@@ -1295,10 +1354,13 @@
                     isNewRound: true,
                     lastPlayedCards: [],
                     displayCards: [], 
+                    lastPlayerId: null, // (修复 Bug 1)
                     currentPlay: null,
                     log: arrayUnion(`游戏开始！${players[firstPlayerIndex].name} (有最小牌) 先出。`),
                     bombCount: 0, 
-                    baseBet: 100, 
+                    baseBet: roomData.baseBet || 100, // (新) 使用房主设置的
+                    initialScore: roomData.initialScore || 10000, // (新)
+                    playHistory: [], // (新)
                     gameNumber: 1, 
                 });
                 
@@ -1407,7 +1469,6 @@
                     let newBaseBet = roomData.baseBet || 100;
                     if (playInfo.type === PLAY_TYPE.BOMB || playInfo.type === PLAY_TYPE.ROCKET) {
                         newBombCount++;
-                        newBaseBet = 100 * Math.pow(2, newBombCount);
                     }
                     
                     transaction.set(handRef, { cards: newHand });
@@ -1422,13 +1483,14 @@
                         discardPile: arrayUnion(...selectedCards), 
                         currentPlay: finalPlayInfo, 
                         lastPlayerId: userId, 
+                        playHistory: arrayUnion(userId), // (新) 记录出牌
                         isNewRound: false, 
                         currentPlayerIndex: newPlayerIndex,
                         players: updatedPlayers,
                         status: newStatus,
                         winner: winner,
                         bombCount: newBombCount, 
-                        baseBet: newBaseBet, 
+                        baseBet: newBaseBet, // (注意: baseBet 现在是基础底分, 不再变化)
                         log: arrayUnion(`${roomData.players[myPlayerIndex].name} 出牌了。`)
                     });
                 });
@@ -1579,7 +1641,6 @@
                     }
                     return display;
                 
-                // (新) 连对
                 case PLAY_TYPE.CONSECUTIVE_PAIRS:
                     const startValPairs = playInfo.value;
                     for (let i = 0; i < playInfo.length / 2; i++) {
@@ -1649,7 +1710,6 @@
                 if (fullHouse) return { type: PLAY_TYPE.FULL_HOUSE, value: fullHouse.value, cards: sortedCards, length: 5 };
             }
             
-            // (新) 连对
             if (len >= 4 && len % 2 === 0) {
                 const consPairs = findConsecutivePairs(regulars, laiziCount, len);
                 if (consPairs) return { type: PLAY_TYPE.CONSECUTIVE_PAIRS, value: consPairs.value, cards: sortedCards, length: len };
@@ -1762,7 +1822,6 @@
             return null; 
         }
         
-        // (新) 连对
         function findConsecutivePairs(regulars, laiziCount, totalLength) {
             const numPairs = totalLength / 2;
             if (numPairs < 2) return null;
@@ -1779,10 +1838,8 @@
             const minReg = uniqueValues.length > 0 ? uniqueValues[0] : LAIZI_2_VALUE;
 
             const maxPossibleStart = minReg;
-            // 至少需要 (numPairs * 2) - laiziCount 张常规牌
-            // 假设最少常规牌: (3), laizi: (2,2,2) -> 3344. minReg=3. laizi=3. totalLength=4. numPairs=2
-            // 
-            const minPossibleStart = Math.max(3, minReg - laiziCount); // 用一个简化的估算
+            
+            const minPossibleStart = Math.max(3, minReg - laiziCount); 
 
             for (let startVal = minPossibleStart; startVal <= maxPossibleStart; startVal++) {
                 const endVal = startVal + numPairs - 1;
@@ -1851,13 +1908,12 @@
                 return true;
             }
 
-            // (新) 连对
             if (playInfo.type === PLAY_TYPE.CONSECUTIVE_PAIRS) {
                 if (lastPlay.type !== PLAY_TYPE.CONSECUTIVE_PAIRS) return false;
                 if (playInfo.length !== lastPlay.length) return false;
                 return playInfo.value === lastPlay.value + 1;
             }
-            if (lastPlay.type === PLAY_TYPE.CONSECUTIVE_PAIRS) return false; // 只有连对能压连对
+            if (lastPlay.type === PLAY_TYPE.CONSECUTIVE_PAIRS) return false; 
 
             if (playInfo.type !== lastPlay.type) return false;
             if (playInfo.type === PLAY_TYPE.STRAIGHT && playInfo.length !== lastPlay.length) return false;
@@ -1866,6 +1922,11 @@
                 return false; 
             }
             
+            // (新) 修复 AA -> 22
+            if (playInfo.type === PLAY_TYPE.PAIR && lastPlay.value === 14 && playInfo.value === 15) {
+                return true;
+            }
+
             return playInfo.value === lastPlay.value + 1;
         }
 
