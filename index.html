@@ -1093,16 +1093,33 @@
                     
                     // 检查是否是强制摸牌回合 (但不是游戏第一回合)
                     const isGameStart = (roomData.lastPlayerId === null);
-                    if (roomData.isNewRound && !isGameStart) {
-                         throw new Error("在新回合，你必须先摸牌！");
-                    }
-                    
-                    const playInfo = getPlayType(selectedCards);
+                    const isFreePlay = isGameStart ? true : roomData.isNewRound; // (Renamed for clarity)
 
-                    // (修复) isValidPlay 现在会正确处理 (isNewRound || !currentPlay)
-                    if (!isValidPlay(playInfo, roomData.currentPlay, isGameStart ? true : roomData.isNewRound)) { 
+                    const playInfo = getPlayType(selectedCards);
+                    
+                    if (!isValidPlay(playInfo, roomData.currentPlay, isFreePlay)) { 
                         throw new Error("无效的出牌！");
                     }
+                    
+                    // (新) 检查是否是癞子代替单张
+                    let finalPlayInfo = playInfo;
+                    const lastPlay = roomData.currentPlay;
+
+                    if (!isFreePlay && // 必须是跟牌
+                        lastPlay && // 上家必须出过牌
+                        playInfo.type === PLAY_TYPE.SINGLE &&
+                        LAIZI_VALUES.includes(playInfo.value) &&
+                        lastPlay.type === PLAY_TYPE.SINGLE &&
+                        lastPlay.value < BIG_JOKER_VALUE)
+                    {
+                        // 这是一个癞子代替单张！
+                        // 癞子 (15, 16, 17) 代替了 (lastPlay.value + 1)
+                        finalPlayInfo = {
+                            ...playInfo, // 保留 type, cards, length
+                            value: lastPlay.value + 1 // (关键) 覆盖牌桌上的 "值"
+                        };
+                    }
+                    // (新) 结束
                     
                     
                     // (BUG 修复) 
@@ -1145,7 +1162,7 @@
                     transaction.update(roomRef, {
                         lastPlayedCards: selectedCards,
                         discardPile: arrayUnion(...selectedCards), // (新) 牌进入废牌堆
-                        currentPlay: playInfo,
+                        currentPlay: finalPlayInfo, // (修改) 使用 finalPlayInfo
                         lastPlayerId: userId, // 记录最后出牌者
                         isNewRound: false, // 出牌后总是不是 newRound
                         currentPlayerIndex: newPlayerIndex,
@@ -1458,12 +1475,23 @@
             if (lastPlay.type === PLAY_TYPE.BOMB) {
                 return false; // 只有炸弹/王炸能压
             }
+            
+            // (新) 5. 检查癞子代替单张
+            if (playInfo.type === PLAY_TYPE.SINGLE &&
+                LAIZI_VALUES.includes(playInfo.value) &&
+                lastPlay.type === PLAY_TYPE.SINGLE &&
+                lastPlay.value < BIG_JOKER_VALUE)
+            {
+                // 玩家使用 2/小王/大王 来代替 (lastPlay.value + 1)
+                return true;
+            }
+            // (新) 结束
 
-            // 5. 跟牌：牌型和长度必须一致
+            // 6. 跟牌：牌型和长度必须一致
             if (playInfo.type !== lastPlay.type) return false;
             if (playInfo.type === PLAY_TYPE.STRAIGHT && playInfo.length !== lastPlay.length) return false;
             
-            // 6. (新) 核心 "+1" 逻辑 (K->A->2->S.Joker->B.Joker)
+            // 7. (新) 核心 "+1" 逻辑 (K->A->2->S.Joker->B.Joker)
             
             // 大王(17) 是最大的, 无法被接
             if (lastPlay.value === BIG_JOKER_VALUE) { 
