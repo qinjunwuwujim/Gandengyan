@@ -992,7 +992,7 @@
                 // 添加 4 张 2 (癞子)
                 deck.push({ suit, rank: '2', value: LAIZI_2_VALUE });
             }
-            // 添加大小王
+            // (修复) 确保大小王只添加一次 (放在循环外)
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
             
@@ -1088,7 +1088,6 @@
                     if (roomData.status !== "playing") throw new Error("游戏未在进行");
                     if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
                     
-                    // (新) 修复 "无法获胜" bug
                     // 检查是否是强制摸牌回合 (但不是游戏第一回合)
                     const isGameStart = (roomData.lastPlayerId === null);
                     if (roomData.isNewRound && !isGameStart) {
@@ -1097,12 +1096,14 @@
                     
                     const playInfo = getPlayType(selectedCards);
 
+                    // (修复) isValidPlay 现在会正确处理 (isNewRound || !currentPlay)
                     if (!isValidPlay(playInfo, roomData.currentPlay, isGameStart ? true : roomData.isNewRound)) { 
                         throw new Error("无效的出牌！");
                     }
                     
                     let newHand = handData.cards.filter((_, index) => !selectedIndices.includes(index));
                     
+                    // (新) 修复 "无法获胜" bug
                     let newStatus = roomData.status;
                     let winner = null;
                     if (newHand.length === 0) {
@@ -1411,8 +1412,9 @@
         function isValidPlay(playInfo, lastPlay, isNewRound) {
             if (playInfo.type === PLAY_TYPE.INVALID) return false;
             
-            // 1. 自由出牌
-            if (isNewRound) return true;
+            // 1. 自由出牌 (修复)
+            // (isNewRound 为 true) 或 (lastPlay 为 null) 都算自由出牌
+            if (isNewRound || !lastPlay) return true;
 
             // 2. 王炸逻辑
             if (playInfo.type === PLAY_TYPE.ROCKET) return true; // 王炸最大
