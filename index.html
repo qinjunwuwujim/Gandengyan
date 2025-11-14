@@ -1782,6 +1782,33 @@
             return { suit: '♦', rank: rank, value: value }; 
         }
         
+        function getPlayDescription(playInfo) {
+            if (!playInfo || !playInfo.type) return "无效";
+            
+            const cards = playInfo.cards || [];
+            const displayCards = getDisplayCards(cards, playInfo);
+            const firstCard = displayCards[0] || {};
+            
+            switch(playInfo.type) {
+                case PLAY_TYPE.ROCKET: return "王炸";
+                case PLAY_TYPE.BOMB: return `炸弹 ${firstCard.rank || ''}`;
+                case PLAY_TYPE.SINGLE: return `单张 ${firstCard.rank || ''}`;
+                case PLAY_TYPE.PAIR: return `对子 ${firstCard.rank || ''}`;
+                case PLAY_TYPE.TRIO: return `三条 ${firstCard.rank || ''}`;
+                case PLAY_TYPE.FULL_HOUSE: 
+                    const trioRank = getCardFromValue(playInfo.value).rank;
+                    const pairRank = displayCards.find(c => c.value !== playInfo.value)?.rank || 'X';
+                    return `三带二 ${trioRank}${trioRank}${trioRank} + ${pairRank}${pairRank}`;
+                case PLAY_TYPE.STRAIGHT:
+                    const endCard = displayCards[displayCards.length - 1] || {};
+                    return `顺子 ${firstCard.rank} ... ${endCard.rank}`;
+                case PLAY_TYPE.CONSECUTIVE_PAIRS:
+                    const endPairCard = displayCards[displayCards.length - 1] || {};
+                    return `连对 ${firstCard.rank}${firstCard.rank} ... ${endPairCard.rank}${endPairCard.rank}`;
+                default: return "出牌";
+            }
+        }
+        
         function getDisplayCards(playedCards, playInfo) {
             if (playInfo.type === PLAY_TYPE.INVALID) return playedCards;
             if (playInfo.type === PLAY_TYPE.ROCKET) return playedCards;
