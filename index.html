@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>干瞪眼 (四人在线版 v2)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义样式 */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            user-select: none;
+            overscroll-behavior: none;
+            background-color: #1F2937; /* gray-800 */
+        }
+        
+        /* 隐藏滚动条 */
+        ::-webkit-scrollbar { display: none; }
+
+        /* 游戏界面 */
+        #game-board {
+            display: grid;
+            grid-template-rows: 1fr 2fr 1fr; /* 上、中、下 */
+            grid-template-columns: 1fr 3fr 1fr; /* 左、中、右 */
+            height: 100vh;
+            width: 100vw;
+            padding: 1rem;
+            box-sizing: border-box;
+            gap: 1rem;
+        }
+
+        /* 玩家位置 */
+        #player-area-top { grid-area: 1 / 2 / 2 / 3; }
+        #player-area-left { grid-area: 2 / 1 / 3 / 2; }
+        #player-area-right { grid-area: 2 / 3 / 3 / 4; }
+        #player-area-bottom { grid-area: 3 / 2 / 4 / 3; }
+        #table-area { grid-area: 2 / 2 / 3 / 3; }
+
+        .player-area {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .player-area.active {
+            border-color: #FCD34D; /* yellow-300 */
+            box-shadow: 0 0 15px rgba(252, 211, 77, 0.3);
+        }
+
+        .player-info {
+            position: absolute;
+            background: rgba(0,0,0,0.5);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            color: white;
+            z-index: 10;
+        }
+
+        /* 调整不同位置的信息显示 */
+        #player-area-top .player-info { bottom: 0.5rem; }
+        #player-area-bottom .player-info { top: 0.5rem; }
+        #player-area-left .player-info { right: 0.5rem; transform: rotate(90deg) translate(50%, 0); transform-origin: right center; }
+        #player-area-right .player-info { left: 0.5rem; transform: rotate(-90deg) translate(-50%, 0); transform-origin: left center; }
+
+        .hand-container {
+            display: flex;
+            flex-wrap: wrap; /* 允许换行 */
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        /* 竖排手牌 (左右玩家) */
+        #player-area-left .hand-container,
+        #player-area-right .hand-container {
+            flex-direction: column;
+            flex-wrap: nowrap;
+        }
+
+        /* 卡片 */
+        .card {
+            width: 64px;
+            height: 90px;
+            border-radius: 6px;
+            background-color: white;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 16px;
+            font-weight: bold;
+            position: relative;
+            transition: all 0.2s ease-out;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .card.face-down {
+            background-color: #3B82F6;
+            background-image: linear-gradient(135deg, #60A5FA 25%, transparent 25%), linear-gradient(225deg, #60A5FA 25%, transparent 25%), linear-gradient(45deg, #60A5FA 25%, transparent 25%), linear-gradient(315deg, #60A5FA 25%, #3B82F6 25%);
+            background-position: 8px 0, 8px 0, 0 0, 0 0;
+            background-size: 16px 16px;
+            background-repeat: repeat;
+        }
+        .card .rank { line-height: 1; padding: 4px; }
+        .card .suit { font-size: 18px; line-height: 1; text-align: center; }
+        .card .rank.bottom { padding: 4px; align-self: flex-end; transform: rotate(180deg); }
+        .card[data-suit="♥"], .card[data-suit="♦"] { color: #EF4444; }
+        .card[data-suit="♠"], .card[data-suit="♣"] { color: #1F2937; }
+        .card[data-value="15"] { color: #F59E0B; } /* 癞子 2 */
+
+
+        /* 玩家自己的手牌 */
+        #player-hand .card {
+            cursor: pointer;
+        }
+        #player-hand .card.selected {
+            transform: translateY(-15px);
+            border: 3px solid #FCD34D;
+        }
+        
+        /* 桌面中央 */
+        #table-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+        #draw-pile-container {
+            position: relative;
+            width: 64px;
+            height: 90px;
+        }
+        .deck-count {
+            position: absolute;
+            bottom: -20px;
+            width: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.875rem;
+            color: #D1D5DB;
+            text-align: center;
+        }
+        #last-play-area {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            min-height: 90px;
+            min-width: 100px;
+            gap: -20px;
+            padding-left: 20px;
+        }
+        #last-play-area .card {
+            margin-left: -20px;
+            cursor: default;
+        }
+        
+        /* 覆盖层 (弹窗) */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 50;
+            color: #1F2937;
+        }
+        .modal {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        /* 按钮 */
+        .btn {
+            padding: 10px 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .btn:disabled {
+            background-color: #6B7280 !important;
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .btn-green { background-color: #10B981; color: white; }
+        .btn-green:hover { background-color: #059669; }
+        .btn-blue { background-color: #3B82F6; color: white; }
+        .btn-blue:hover { background-color: #2563EB; }
+        .btn-red { background-color: #EF4444; color: white; }
+        .btn-red:hover { background-color: #DC2626; }
+        
+        /* 消息提示 */
+        #message-area {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: #FCD34D;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            z-index: 100;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+        }
+        #message-area.show {
+            opacity: 1;
+        }
+        
+        /* 游戏内退出按钮 */
+        #ingame-leave-btn {
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            z-index: 40;
+        }
+    </style>
+</head>
+<body class="text-white">
+
+    <!-- 游戏主界面 (默认隐藏) -->
+    <div id="game-board" class="hidden">
+        
+        <button id="ingame-leave-btn" class="btn btn-red">返回大厅</button>
+        
+        <div id="player-area-top" class="player-area hidden">
+            <div id="player-info-top" class="player-info">玩家 2 (0 张)</div>
+            <div id="player-hand-top" class="hand-container"></div>
+        </div>
+        
+        <div id="player-area-left" class="player-area hidden">
+            <div id="player-info-left" class="player-info">玩家 1 (0 张)</div>
+            <div id="player-hand-left" class="hand-container"></div>
+        </div>
+
+        <div id="table-area">
+            <div id="draw-pile-container">
+                <div class="card face-down"></div>
+                <div id="draw-pile-count" class="deck-count">剩余: 0</div>
+            </div>
+            <div id="last-play-area"></div>
+        </div>
+
+        <div id="player-area-right" class="player-area hidden">
+            <div id="player-info-right" class="player-info">玩家 3 (0 张)</div>
+            <div id="player-hand-right" class="hand-container"></div>
+        </div>
+        
+        <div id="player-area-bottom" class="player-area">
+            <div id="player-info-bottom" class="player-info">你 (0 张)</div>
+            <div class="absolute bottom-2 right-2 flex gap-2 z-10">
+                <button id="play-button" class="btn btn-green">出牌</button>
+                <button id="pass-draw-button" class="btn btn-blue">摸牌 / 过</button>
+            </div>
+            <div id="player-hand" class="hand-container p-4 overflow-x-auto w-full">
+                <!-- 玩家的牌 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载界面 (默认显示) -->
+    <div id="loading-screen" class="overlay">
+        <div class="modal">
+            <h2 class="text-2xl font-bold mb-4">正在连接...</h2>
+            <p id="loading-status">正在连接到 Firebase 并进行身份验证...</p>
+        </div>
+    </div>
+    
+    <!-- 大厅界面 -->
+    <div id="lobby-screen" class="overlay hidden">
+        <div class="modal">
+            <h2 class="text-2xl font-bold mb-4">干瞪眼 (在线版)</h2>
+            <p class="mb-2">你的用户 ID: <strong id="user-id-display" class="text-xs break-all"></strong></p>
+            <div class="flex flex-col gap-4">
+                <button id="create-room-btn" class="btn btn-green" disabled>创建房间</button>
+                <hr>
+                <input id="room-id-input" type="text" placeholder="输入房间 ID" class="p-2 border rounded text-center">
+                <button id="join-room-btn" class="btn btn-blue" disabled>加入房间</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 等待室界面 -->
+    <div id="waiting-room-screen" class="overlay hidden">
+        <div class="modal">
+            <h2 class="text-xl font-bold mb-4">等待室</h2>
+            <!-- (修复) 修改提示文本 -->
+            <p id="waiting-room-prompt" class="mb-2">分享这个【邀请链接】给你的朋友:</p>
+            <input id="room-id-display" type="text" readonly class="p-2 border rounded text-center w-full font-bold text-sm mb-4" onclick="this.select()">
+            
+            <h3 class="font-bold mb-2">已加入的玩家 (<span id="player-count">1</span>/4):</h3>
+            <ul id="player-list" class="list-disc list-inside mb-4 text-left">
+                <!-- 玩家列表 -->
+            </ul>
+            
+            <button id="start-game-btn" class="btn btn-green hidden">开始游戏 (2-4 人)</button>
+            <button id="leave-room-btn" class="btn btn-red mt-2">离开房间</button>
+        </div>
+    </div>
+
+    <!-- 游戏结束弹窗 -->
+    <div id="game-over-modal" class="overlay hidden">
+        <div class="modal">
+            <h2 id="game-over-title" class="text-3xl font-bold mb-4">游戏结束</h2>
+            <p id="game-over-message" class="text-lg mb-6">玩家 1 赢了!</p>
+            <button id="back-to-lobby-btn" class="btn btn-green">返回大厅</button>
+        </div>
+    </div>
+    
+    <!-- 消息提示框 -->
+    <div id="message-area"></div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // 导入 Firebase 模块
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, runTransaction, writeBatch, arrayUnion, arrayRemove, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- 全局变量 ---
+        let db, auth;
+        let userId, appId;
+        let currentRoomId = null;
+        let localHand = [];
+        let selectedIndices = [];
+        let gameUnsubscribe = null;
+        let handUnsubscribe = null;
+        let myPlayerIndex = 0; 
+
+        // --- UI 元素 ---
+        const loadingScreen = document.getElementById('loading-screen');
+        const loadingStatus = document.getElementById('loading-status');
+        const lobbyScreen = document.getElementById('lobby-screen');
+        const waitingRoomScreen = document.getElementById('waiting-room-screen');
+        const gameBoard = document.getElementById('game-board');
+        const gameOverModal = document.getElementById('game-over-modal');
+        const createRoomBtn = document.getElementById('create-room-btn');
+        const joinRoomBtn = document.getElementById('join-room-btn');
+
+        // --- 牌型定义 ---
+        const SUITS = ['♥', '♦', '♣', '♠'];
+        const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+        const RANK_VALUES = {};
+        RANKS.forEach((rank, index) => { RANK_VALUES[rank] = index + 3; });
+        
+        const JOKER_VALUE = RANK_VALUES['2']; // 15
+        const PLAY_TYPE = {
+            INVALID: 'INVALID', SINGLE: 'SINGLE', PAIR: 'PAIR', TRIO: 'TRIO',
+            FULL_HOUSE: 'FULL_HOUSE', STRAIGHT: 'STRAIGHT', BOMB: 'BOMB'
+        };
+
+        // --- 1. 初始化 Firebase ---
+        
+        async function initFirebase() {
+            try {
+                const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                if (firebaseConfigStr === '{}') {
+                     throw new Error("Firebase config is missing (__firebase_config is undefined).");
+                }
+                
+                const firebaseConfig = JSON.parse(firebaseConfigStr);
+
+                if (!firebaseConfig.apiKey) {
+                    throw new Error("Firebase config is missing apiKey.");
+                }
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // 1. 设置监听器
+                onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        // 未登录, 尝试登录
+                        loadingStatus.textContent = "正在登录...";
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Auth Error:", authError);
+                            throw new Error(`身份验证失败: ${authError.message}`);
+                        }
+                        return;
+                    }
+                    
+                    // (修复) 登录成功后
+                    userId = user.uid;
+                    document.getElementById('user-id-display').textContent = userId;
+                    createRoomBtn.disabled = false;
+                    joinRoomBtn.disabled = false;
+
+                    // (修复) 检查 URL 是否包含 room=...
+                    const params = new URLSearchParams(window.location.search);
+                    const roomIdFromUrl = params.get('room');
+
+                    if (roomIdFromUrl) {
+                        // 自动加入
+                        showMessage(`正在自动加入房间 ${roomIdFromUrl}...`);
+                        document.getElementById('room-id-input').value = roomIdFromUrl;
+                        
+                        // 模拟点击 "加入房间" 按钮的逻辑
+                        await autoJoinRoom(roomIdFromUrl);
+                    } else {
+                        // 正常显示大厅
+                        showScreen('lobby');
+                    }
+                });
+                
+            } catch (error) {
+                console.error("Firebase Init Error:", error);
+                loadingScreen.innerHTML = `<div class="modal"><h2 class="text-2xl font-bold mb-4 text-red-600">连接失败</h2><p>${error.message}</p></div>`;
+            }
+        }
+        
+        // (修复) 新增: 自动加入的函数
+        async function autoJoinRoom(roomId) {
+            joinRoomBtn.disabled = true; // 禁用按钮
+            
+            const roomRef = doc(db, paths.room(roomId));
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(roomRef);
+                    if (!roomSnap.exists()) {
+                        throw new Error("房间不存在 (来自链接)");
+                    }
+                    
+                    const roomData = roomSnap.data();
+                    if (roomData.status !== "waiting") {
+                        throw new Error("游戏已开始 (来自链接)");
+                    }
+                    
+                    if (roomData.players.length >= 4) {
+                        throw new Error("房间已满 (来自链接)");
+                    }
+                    
+                    if (!roomData.players.some(p => p.uid === userId)) {
+                        const newPlayer = { uid: userId, name: `玩家 ${roomData.players.length + 1}`, cardCount: 0 };
+                        transaction.update(roomRef, {
+                            players: arrayUnion(newPlayer),
+                            log: arrayUnion(`${newPlayer.name} 已加入。`)
+                        });
+                    }
+                });
+
+                await joinRoom(roomId); // 事务成功, 订阅房间
+                
+            } catch (error) {
+                console.error("Auto-join Error:", error);
+                showMessage("自动加入失败: " + error.message);
+                joinRoomBtn.disabled = false;
+                showScreen('lobby'); // 失败, 返回大厅
+                window.history.pushState({}, '', window.location.pathname); // 清理 URL
+            }
+        }
+
+        // --- 2. UI 屏幕管理 ---
+
+        function showScreen(screenId) {
+            loadingScreen.classList.add('hidden');
+            lobbyScreen.classList.add('hidden');
+            waitingRoomScreen.classList.add('hidden');
+            gameBoard.classList.add('hidden');
+            gameOverModal.classList.add('hidden');
+            
+            if (screenId === 'waiting-room') {
+                waitingRoomScreen.classList.remove('hidden');
+                return;
+            }
+
+            const screenElement = document.getElementById(`${screenId}-screen`);
+            if (screenElement) {
+                screenElement.classList.remove('hidden');
+            } else if (screenId === 'game-board') {
+                 gameBoard.classList.remove('hidden');
+            }
+        }
+        
+        function showMessage(msg) {
+            const msgArea = document.getElementById('message-area');
+            if (!msgArea) return; 
+            msgArea.textContent = msg;
+            msgArea.classList.add('show');
+            setTimeout(() => msgArea.classList.remove('show'), 2000);
+        }
+
+        // --- 3. 路径助手 ---
+        const paths = {
+            room: (roomId) => `/artifacts/${appId}/public/data/gandengyan-rooms/${roomId}`,
+            hand: (roomId, uid) => `/artifacts/${appId}/public/data/gandengyan-hands/${roomId}-${uid}`
+        };
+        
+        // --- 4. 大厅逻辑 (创建/加入) ---
+        
+        createRoomBtn.onclick = async () => {
+            const btn = createRoomBtn;
+            btn.disabled = true;
+            btn.textContent = "创建中...";
+            
+            const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            const roomRef = doc(db, paths.room(roomId));
+            
+            const initialRoomData = {
+                roomId: roomId,
+                hostId: userId,
+                players: [{ uid: userId, name: `玩家 1`, cardCount: 0 }], 
+                status: "waiting", 
+                drawPile: [],
+                lastPlayedCards: [],
+                currentPlay: null,
+                currentPlayerIndex: 0,
+                isNewRound: true,
+                log: [`房间 ${roomId} 已创建。`],
+                winner: null
+            };
+            
+            try {
+                await setDoc(roomRef, initialRoomData);
+                await joinRoom(roomId); // 加入并监听
+            } catch (error) {
+                console.error("Create Room Error:", error);
+                showMessage("创建房间失败: " + error.message);
+                btn.disabled = false;
+            } finally {
+                btn.textContent = "创建房间";
+            }
+        };
+
+        joinRoomBtn.onclick = async () => {
+            const roomId = document.getElementById('room-id-input').value.toUpperCase();
+            if (!roomId) {
+                 showMessage("请输入房间 ID");
+                 return;
+            }
+            
+            const btn = joinRoomBtn;
+            btn.disabled = true;
+            
+            const roomRef = doc(db, paths.room(roomId));
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(roomRef);
+                    if (!roomSnap.exists()) {
+                        throw new Error("房间不存在"); 
+                    }
+                    
+                    const roomData = roomSnap.data();
+                    if (roomData.status !== "waiting") {
+                        throw new Error("游戏已开始或已结束");
+                    }
+                    
+                    if (roomData.players.length >= 4) {
+                        throw new Error("房间已满");
+                    }
+                    
+                    if (!roomData.players.some(p => p.uid === userId)) {
+                        const newPlayer = { uid: userId, name: `玩家 ${roomData.players.length + 1}`, cardCount: 0 };
+                        transaction.update(roomRef, {
+                            players: arrayUnion(newPlayer),
+                            log: arrayUnion(`${newPlayer.name} 已加入。`)
+                        });
+                    }
+                });
+
+                await joinRoom(roomId); // 加入并监听
+                
+            } catch (error) {
+                console.error("Join Room Error:", error);
+                showMessage("加入失败: " + error.message);
+                btn.disabled = false;
+            }
+        };
+
+        // --- 5. 等待室逻辑 ---
+        
+        async function joinRoom(roomId) {
+            currentRoomId = roomId;
+            
+            const roomRef = doc(db, paths.room(roomId));
+            gameUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    if (currentRoomId) { 
+                        showMessage("房间不存在或已解散");
+                        leaveRoom(false);
+                    }
+                    return;
+                }
+                renderGameState(docSnap.data());
+            }, (error) => {
+                console.error("Room subscription error:", error);
+                leaveRoom(false);
+                showMessage("房间连接错误: " + error.message);
+            });
+            
+            const handRef = doc(db, paths.hand(roomId, userId));
+            handUnsubscribe = onSnapshot(handRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    localHand = docSnap.data().cards;
+                    renderPlayerHand();
+                } else {
+                    localHand = []; 
+                    renderPlayerHand();
+                }
+            });
+
+            showScreen('waiting-room');
+            
+            // (修复) 显示完整的邀请链接
+            const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+            document.getElementById('room-id-display').value = inviteLink;
+            document.getElementById('waiting-room-prompt').textContent = "分享这个【邀请链接】给你的朋友:";
+        }
+        
+        document.getElementById('leave-room-btn').onclick = () => leaveRoom(true);
+        document.getElementById('ingame-leave-btn').onclick = () => leaveRoom(true);
+        document.getElementById('back-to-lobby-btn').onclick = () => leaveRoom(false); 
+
+        async function leaveRoom(updateDB) {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+                gameUnsubscribe = null; 
+            }
+            if (handUnsubscribe) {
+                handUnsubscribe();
+                handUnsubscribe = null; 
+            }
+            
+            const roomId = currentRoomId;
+            const uid = userId;
+            
+            currentRoomId = null;
+            localHand = [];
+            selectedIndices = [];
+
+            if (updateDB && roomId && uid) {
+                const roomRef = doc(db, paths.room(roomId));
+                const handRef = doc(db, paths.hand(roomId, uid));
+                
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const roomSnap = await transaction.get(roomRef);
+                        if (!roomSnap.exists()) return;
+                        
+                        const roomData = roomSnap.data();
+                        if (roomData.status === 'finished') return;
+
+                        const newPlayers = roomData.players.filter(p => p.uid !== uid);
+                        
+                        if (newPlayers.length === 0) {
+                            transaction.delete(roomRef);
+                        } else {
+                            let newHostId = roomData.hostId;
+                            if (roomData.hostId === uid) {
+                                newHostId = newPlayers[0].uid;
+                            }
+                            transaction.update(roomRef, {
+                                players: newPlayers,
+                                hostId: newHostId,
+                                log: arrayUnion(`玩家 ${uid.substring(0,4)} 已离开。`)
+                            });
+                        }
+                        transaction.delete(handRef);
+                    });
+                } catch (error) {
+                    console.error("Leave Room Error:", error);
+                }
+            }
+            
+            showScreen('lobby');
+            // (修复) 清理 URL, 避免下次刷新自动加入
+            window.history.pushState({}, '', window.location.pathname);
+        }
+
+        // --- 6. 渲染游戏状态 (核心) ---
+        
+        function renderGameState(roomData) {
+            if (!roomData || !currentRoomId) return;
+
+            if (roomData.status === "waiting") {
+                showScreen('waiting-room');
+                // (修复) 更新邀请链接, 保持同步 (虽然一般不会变)
+                const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomData.roomId}`;
+                document.getElementById('room-id-display').value = inviteLink;
+                
+                const playerList = document.getElementById('player-list');
+                playerList.innerHTML = '';
+                roomData.players.forEach(p => {
+                    const li = document.createElement('li');
+                    li.textContent = `${p.name} ${p.uid === roomData.hostId ? '(房主)' : ''} ${p.uid === userId ? '(你)' : ''}`;
+                    playerList.appendChild(li);
+                });
+                document.getElementById('player-count').textContent = roomData.players.length;
+                
+                const startBtn = document.getElementById('start-game-btn');
+                if (roomData.hostId === userId && roomData.players.length >= 2) {
+                    startBtn.classList.remove('hidden');
+                    startBtn.textContent = `开始游戏 (${roomData.players.length} 人)`;
+                } else {
+                    startBtn.classList.add('hidden');
+                }
+                
+            } else if (roomData.status === "playing") {
+                // (修复) 游戏开始, 清理 URL
+                window.history.pushState({}, '', window.location.pathname);
+                showScreen('game-board');
+                
+                const numPlayers = roomData.players.length;
+                myPlayerIndex = roomData.players.findIndex(p => p.uid === userId);
+                if (myPlayerIndex === -1) {
+                    console.warn("User not in player list.");
+                    leaveRoom(false);
+                    return;
+                }
+                
+                const areas = [
+                    { id: 'bottom', handEl: 'player-hand', infoEl: 'player-info-bottom', areaEl: 'player-area-bottom', playerIdx: 0 },
+                    { id: 'left',   handEl: 'player-hand-left', infoEl: 'player-info-left', areaEl: 'player-area-left', playerIdx: 1 }, 
+                    { id: 'top',    handEl: 'player-hand-top', infoEl: 'player-info-top', areaEl: 'player-area-top', playerIdx: 2 }, 
+                    { id: 'right',  handEl: 'player-hand-right', infoEl: 'player-info-right', areaEl: 'player-area-right', playerIdx: 3 }
+                ];
+                
+                areas.forEach(a => document.getElementById(a.areaEl).classList.add('hidden'));
+
+                let displayMap = [];
+                if (numPlayers === 2) {
+                    displayMap[0] = areas[0]; // 我
+                    displayMap[1] = areas[2]; // 对面
+                } else if (numPlayers === 3) {
+                    displayMap[0] = areas[0]; // 我
+                    displayMap[1] = areas[1]; // 左
+                    displayMap[2] = areas[3]; // 右
+                } else {
+                    displayMap[0] = areas[0];
+                    displayMap[1] = areas[1];
+                    displayMap[2] = areas[2];
+                    displayMap[3] = areas[3];
+                }
+
+                for (let i = 0; i < numPlayers; i++) {
+                    const player = roomData.players[i];
+                    const relativeIndex = (i - myPlayerIndex + numPlayers) % numPlayers;
+                    
+                    const area = displayMap[relativeIndex];
+                    if (!area) continue; 
+
+                    const areaEl = document.getElementById(area.areaEl);
+                    const infoEl = document.getElementById(area.infoEl);
+                    const handEl = document.getElementById(area.handEl);
+                    
+                    areaEl.classList.remove('hidden'); 
+                    infoEl.textContent = `${player.name} (${player.cardCount} 张)`;
+                    
+                    if (i === roomData.currentPlayerIndex) {
+                        areaEl.classList.add('active');
+                    } else {
+                        areaEl.classList.remove('active');
+                    }
+                    
+                    if (relativeIndex !== 0) { 
+                        handEl.innerHTML = '';
+                        for (let c = 0; c < player.cardCount; c++) {
+                            handEl.appendChild(createCardElement(null, true));
+                        }
+                    }
+                }
+                
+                document.getElementById('draw-pile-count').textContent = `剩余: ${roomData.drawPile.length}`;
+                
+                const lastPlayArea = document.getElementById('last-play-area');
+                lastPlayArea.innerHTML = '';
+                if (roomData.lastPlayedCards.length > 0) {
+                    roomData.lastPlayedCards.forEach(card => {
+                        lastPlayArea.appendChild(createCardElement(card));
+                    });
+                }
+                
+                const isMyTurn = roomData.currentPlayerIndex === myPlayerIndex;
+                document.getElementById('play-button').disabled = !isMyTurn;
+                document.getElementById('pass-draw-button').disabled = !isMyTurn;
+                
+                if (roomData.drawPile.length === 0) {
+                    document.getElementById('pass-draw-button').textContent = '过 (Pass)';
+                } else {
+                    document.getElementById('pass-draw-button').textContent = '摸牌 / 过';
+                }
+
+            } else if (roomData.status === "finished") {
+                document.getElementById('game-over-title').textContent = roomData.winner === userId ? "恭喜你！" : "很遗憾...";
+                const winnerName = roomData.players.find(p => p.uid === roomData.winner)?.name || "??";
+                document.getElementById('game-over-message').textContent = `${winnerName} 赢得了游戏!`;
+                gameOverModal.classList.remove('hidden');
+                
+                if (gameUnsubscribe) gameUnsubscribe();
+                if (handUnsubscribe) handUnsubscribe();
+                gameUnsubscribe = null;
+                handUnsubscribe = null;
+            }
+        }
+        
+        // --- 7. 渲染玩家手牌 (自己) ---
+        
+        function renderPlayerHand() {
+            const playerHandArea = document.getElementById('player-hand');
+            if (!playerHandArea) return; 
+            
+            playerHandArea.innerHTML = '';
+            localHand.sort((a, b) => {
+                if (a.value === JOKER_VALUE && b.value !== JOKER_VALUE) return 1;
+                if (a.value !== JOKER_VALUE && b.value === JOKER_VALUE) return -1;
+                return a.value - b.value || a.suit.localeCompare(b.suit);
+            });
+            
+            localHand.forEach((card, index) => {
+                const cardDiv = createCardElement(card);
+                if (selectedIndices.includes(index)) {
+                    cardDiv.classList.add('selected');
+                }
+                cardDiv.addEventListener('click', () => toggleCardSelection(index));
+                playerHandArea.appendChild(cardDiv);
+            });
+            
+            const infoBottom = document.getElementById('player-info-bottom');
+            if (infoBottom && infoBottom.textContent) {
+                const name = infoBottom.textContent.split('(')[0] || '你';
+                infoBottom.textContent = `${name}(${localHand.length} 张)`;
+            }
+        }
+
+        function createCardElement(card, isFaceDown = false) {
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'card';
+            
+            if (isFaceDown) {
+                cardDiv.classList.add('face-down');
+            } else {
+                cardDiv.dataset.suit = card.suit;
+                cardDiv.dataset.value = card.value;
+                cardDiv.innerHTML = `
+                    <div class="rank">${card.rank}</div>
+                    <div class="suit">${card.suit}</div>
+                    <div class="rank bottom">${card.rank}</div>
+                `;
+            }
+            return cardDiv;
+        }
+
+        function toggleCardSelection(index) {
+            const selIndex = selectedIndices.indexOf(index);
+            if (selIndex > -1) {
+                selectedIndices.splice(selIndex, 1);
+            } else {
+                selectedIndices.push(index);
+            }
+            renderPlayerHand();
+        }
+        
+        // --- 8. 游戏逻辑 (开始/出牌/摸牌) ---
+        
+        document.getElementById('start-game-btn').onclick = async () => {
+            if (!currentRoomId || !appId) return;
+            
+            const roomRef = doc(db, paths.room(currentRoomId));
+            const roomSnap = await getDoc(roomRef);
+            if (!roomSnap.exists()) return;
+            const roomData = roomSnap.data();
+            const players = roomData.players;
+            const numPlayers = players.length;
+
+            if (numPlayers < 2 || numPlayers > 4) {
+                showMessage("必须有 2-4 名玩家才能开始。");
+                return;
+            }
+            
+            let deck = [];
+            for (const suit of SUITS) {
+                for (const rank of RANKS) {
+                    deck.push({ suit, rank, value: RANK_VALUES[rank] });
+                }
+            }
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+            
+            const hands = [];
+            for (let i = 0; i < numPlayers; i++) hands.push([]);
+            
+            for (let i = 0; i < 6; i++) {
+                for (let j = 0; j < numPlayers; j++) {
+                    if (deck.length > 0) {
+                        hands[j].push(deck.pop());
+                    }
+                }
+            }
+            
+            try {
+                const batch = writeBatch(db);
+                
+                for (let i = 0; i < numPlayers; i++) {
+                    const uid = players[i].uid;
+                    const handRef = doc(db, paths.hand(currentRoomId, uid));
+                    batch.set(handRef, { cards: hands[i] });
+                }
+                
+                const updatedPlayers = players.map(p => ({ ...p, cardCount: 6 }));
+                
+                batch.update(roomRef, {
+                    status: "playing",
+                    drawPile: deck,
+                    players: updatedPlayers,
+                    currentPlayerIndex: 0,
+                    isNewRound: true,
+                    lastPlayedCards: [],
+                    currentPlay: null,
+                    log: arrayUnion("游戏开始！")
+                });
+                
+                await batch.commit();
+                
+            } catch (error) {
+                console.error("Start Game Error:", error);
+                showMessage("开始游戏失败: " + error.message);
+            }
+        };
+
+        // 玩家出牌
+        document.getElementById('play-button').onclick = async () => {
+            const btn = document.getElementById('play-button');
+            if (selectedIndices.length === 0) {
+                showMessage("请选择要出的牌");
+                return;
+            }
+            if (!currentRoomId || !appId) return;
+            btn.disabled = true;
+
+            const selectedCards = selectedIndices.map(i => localHand[i]).sort((a, b) => a.value - b.value);
+
+            const roomRef = doc(db, paths.room(currentRoomId));
+            const handRef = doc(db, paths.hand(currentRoomId, userId));
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(roomRef);
+                    const handSnap = await transaction.get(handRef);
+                    
+                    if (!roomSnap.exists() || !handSnap.exists()) throw new Error("房间或手牌不存在");
+                    
+                    const roomData = roomSnap.data();
+                    const handData = handSnap.data();
+                    const numPlayers = roomData.players.length;
+                    
+                    if (roomData.status !== "playing") throw new Error("游戏未在进行");
+                    if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
+                    
+                    let drawnCard = null;
+                    let newDrawPile = [...roomData.drawPile];
+                    if (roomData.isNewRound && newDrawPile.length > 0) {
+                        drawnCard = newDrawPile.pop();
+                    }
+                    
+                    const playInfo = getPlayType(selectedCards);
+
+                    if (!isValidPlay(playInfo, roomData.currentPlay, roomData.isNewRound)) {
+                        throw new Error("无效的出牌！");
+                    }
+                    
+                    let newHand = handData.cards.filter((_, index) => !selectedIndices.includes(index));
+                    if (drawnCard) {
+                        newHand.push(drawnCard);
+                    }
+                    
+                    transaction.set(handRef, { cards: newHand });
+                    
+                    const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
+                    const updatedPlayers = [...roomData.players];
+                    updatedPlayers[myPlayerIndex].cardCount = newHand.length;
+                    
+                    let newStatus = roomData.status;
+                    let winner = null;
+                    if (newHand.length === 0) {
+                        newStatus = "finished";
+                        winner = userId;
+                    }
+                    
+                    transaction.update(roomRef, {
+                        lastPlayedCards: selectedCards,
+                        currentPlay: playInfo,
+                        isNewRound: false,
+                        currentPlayerIndex: newPlayerIndex,
+                        players: updatedPlayers,
+                        status: newStatus,
+                        winner: winner,
+                        drawPile: newDrawPile,
+                        log: arrayUnion(`${roomData.players[myPlayerIndex].name} ${drawnCard ? '摸牌并' : ''}出牌了。`)
+                    });
+                });
+                
+                selectedIndices = []; 
+                
+            } catch (error) {
+                console.error("Play Card Error:", error);
+                showMessage(error.message);
+                btn.disabled = false;
+            }
+        };
+        
+        // 玩家摸牌 / 过
+        document.getElementById('pass-draw-button').onclick = async () => {
+            const btn = document.getElementById('pass-draw-button');
+            if (!currentRoomId || !appId) return;
+            btn.disabled = true;
+            
+            const roomRef = doc(db, paths.room(currentRoomId));
+            const handRef = doc(db, paths.hand(currentRoomId, userId));
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(roomRef);
+                    const handSnap = await transaction.get(handRef);
+                    
+                    if (!roomSnap.exists() || !handSnap.exists()) throw new Error("房间或手牌不存在");
+                    
+                    const roomData = roomSnap.data();
+                    const handData = handSnap.data();
+                    const numPlayers = roomData.players.length;
+                    
+                    if (roomData.status !== "playing") throw new Error("游戏未在进行");
+                    if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
+                    
+                    const newHand = [...handData.cards];
+                    const newDrawPile = [...roomData.drawPile];
+                    let logMsg = `${roomData.players[myPlayerIndex].name} 选择'过'。`;
+                    
+                    if (newDrawPile.length > 0) {
+                        const drawnCard = newDrawPile.pop();
+                        newHand.push(drawnCard);
+                        logMsg = `${roomData.players[myPlayerIndex].name} 摸了一张牌。`;
+                    }
+                    
+                    transaction.set(handRef, { cards: newHand });
+                    
+                    const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
+                    const updatedPlayers = [...roomData.players];
+                    updatedPlayers[myPlayerIndex].cardCount = newHand.length;
+                    
+                    transaction.update(roomRef, {
+                        drawPile: newDrawPile,
+                        players: updatedPlayers,
+                        currentPlayerIndex: newPlayerIndex,
+                        isNewRound: true,
+                        log: arrayUnion(logMsg)
+                    });
+                });
+                
+                selectedIndices = [];
+                
+            } catch (error) {
+                console.error("Pass/Draw Error:", error);
+                showMessage(error.message);
+                btn.disabled = false;
+            }
+        };
+        
+        // --- 9. 牌型验证 (含癞子) ---
+        
+        function getPlayType(cards) {
+            if (!cards || cards.length === 0) return { type: PLAY_TYPE.INVALID };
+
+            const len = cards.length;
+            const sortedCards = [...cards].sort((a, b) => a.value - b.value);
+            
+            const jokers = sortedCards.filter(c => c.value === JOKER_VALUE);
+            const regulars = sortedCards.filter(c => c.value !== JOKER_VALUE);
+            const jokerCount = jokers.length;
+            
+            if (regulars.length > 0) {
+                const firstVal = regulars[0].value;
+                const isAllSameRank = regulars.every(v => v.value === firstVal);
+
+                if (isAllSameRank) {
+                    const totalCount = regulars.length + jokerCount;
+                    if (totalCount === 1) return { type: PLAY_TYPE.SINGLE, value: firstVal, cards: sortedCards, length: 1 };
+                    if (totalCount === 2) return { type: PLAY_TYPE.PAIR, value: firstVal, cards: sortedCards, length: 2 };
+                    if (totalCount === 3) return { type: PLAY_TYPE.TRIO, value: firstVal, cards: sortedCards, length: 3 };
+                    if (totalCount === 4) return { type: PLAY_TYPE.BOMB, value: firstVal, cards: sortedCards, length: 4 };
+                }
+            } else if (jokerCount > 0) {
+                if (jokerCount === 1) return { type: PLAY_TYPE.SINGLE, value: JOKER_VALUE, cards: sortedCards, length: 1 };
+                if (jokerCount === 2) return { type: PLAY_TYPE.PAIR, value: JOKER_VALUE, cards: sortedCards, length: 2 };
+                if (jokerCount === 3) return { type: PLAY_TYPE.TRIO, value: JOKER_VALUE, cards: sortedCards, length: 3 };
+                if (jokerCount === 4) return { type: PLAY_TYPE.BOMB, value: JOKER_VALUE, cards: sortedCards, length: 4 };
+            }
+
+            if (len >= 3) {
+                let regValues = regulars.map(c => c.value);
+                let regUniqueValues = [...new Set(regValues)];
+                
+                if (regUniqueValues.length === 0 && jokerCount >= 3) {
+                    return { type: PLAY_TYPE.STRAIGHT, value: 3 + len - 1, cards: sortedCards, length: len };
+                }
+                
+                if (regUniqueValues.length === 0) {
+                    return { type: PLAY_TYPE.INVALID };
+                }
+
+                const minVal = regUniqueValues[0];
+                if (minVal + len - 1 >= JOKER_VALUE) {
+                     if (regUniqueValues[regUniqueValues.length - 1] > 14) {
+                         return { type: PLAY_TYPE.INVALID };
+                     }
+                }
+
+                const straightLen = len;
+                let neededJokers = 0;
+                let currentVal = minVal;
+                let regIndex = 0;
+                
+                for(let i=0; i < straightLen; i++) {
+                    if (currentVal >= JOKER_VALUE) {
+                        neededJokers = 99;
+                        break;
+                    }
+                    
+                    if (regIndex < regUniqueValues.length && regUniqueValues[regIndex] === currentVal) {
+                        regIndex++;
+                    } else {
+                        neededJokers++;
+                    }
+                    currentVal++;
+                }
+
+                if (neededJokers <= jokerCount) {
+                    return { type: PLAY_TYPE.STRAIGHT, value: minVal + len - 1, cards: sortedCards, length: len };
+                }
+            }
+
+            if (len === 5 && jokerCount === 0) {
+                const values = sortedCards.map(c => c.value);
+                const isFullHouse1 = (values[0] === values[1] && values[0] === values[2] && values[3] === values[4]); // 3+2
+                const isFullHouse2 = (values[0] === values[1] && values[2] === values[3] && values[2] === values[4]); // 2+3
+                
+                if (isFullHouse1) return { type: PLAY_TYPE.FULL_HOUSE, value: values[0], cards: sortedCards, length: 5 };
+                if (isFullHouse2) return { type: PLAY_TYPE.FULL_HOUSE, value: values[2], cards: sortedCards, length: 5 };
+            }
+            
+            return { type: PLAY_TYPE.INVALID };
+        }
+
+
+        function isValidPlay(playInfo, lastPlay, isNewRound) {
+            if (playInfo.type === PLAY_TYPE.INVALID) return false;
+            
+            if (isNewRound) return true;
+
+            if (playInfo.type === PLAY_TYPE.BOMB) {
+                if (lastPlay.type === PLAY_TYPE.BOMB) {
+                    return playInfo.value > lastPlay.value;
+                }
+                return true;
+            }
+            if (lastPlay.type === PLAY_TYPE.BOMB) {
+                return false;
+            }
+
+            if (playInfo.type !== lastPlay.type) return false;
+            if (playInfo.length !== lastPlay.length) return false;
+            
+            return playInfo.value > lastPlay.value;
+        }
+
+        // --- 启动 ---
+        initFirebase();
+
+    </script>
+</body>
+</html>
