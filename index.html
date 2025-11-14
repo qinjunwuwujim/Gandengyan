@@ -101,6 +101,7 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            overflow: hidden; /* 确保内容不溢出 */
         }
         .card.face-down {
             background-color: #3B82F6;
@@ -114,7 +115,14 @@
         .card .rank.bottom { padding: 4px; align-self: flex-end; transform: rotate(180deg); }
         .card[data-suit="♥"], .card[data-suit="♦"] { color: #EF4444; }
         .card[data-suit="♠"], .card[data-suit="♣"] { color: #1F2937; }
-        .card[data-value="15"] { color: #F59E0B; } /* 癞子 2 */
+        
+        /* 癞子牌的特殊颜色 */
+        .card.laizi {
+            color: #F59E0B; /* A golden/orange color for all laizi */
+            border: 2px solid #F59E0B;
+        }
+        .card[data-value="17"].laizi { color: #EF4444; border-color: #EF4444; } /* Big Joker remains red */
+        .card[data-value="16"].laizi { color: #1F2937; border-color: #1F2937; } /* Small Joker remains black */
 
 
         /* 玩家自己的手牌 */
@@ -123,7 +131,9 @@
         }
         #player-hand .card.selected {
             transform: translateY(-15px);
-            border: 3px solid #FCD34D;
+            border-color: #FCD34D;
+            border-width: 3px;
+            box-shadow: 0 8px 15px rgba(252, 211, 77, 0.3);
         }
         
         /* 桌面中央 */
@@ -358,12 +368,18 @@
         const SUITS = ['♥', '♦', '♣', '♠'];
         const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
         const RANK_VALUES = {};
-        RANKS.forEach((rank, index) => { RANK_VALUES[rank] = index + 3; });
+        RANKS.forEach((rank, index) => { RANK_VALUES[rank] = index + 3; }); // 3=3 ... A=14
         
-        const JOKER_VALUE = RANK_VALUES['2']; // 15
+        const LAIZI_2_VALUE = RANK_VALUES['2']; // 15 (这是 2)
+        const SMALL_JOKER_VALUE = 16;
+        const BIG_JOKER_VALUE = 17;
+        // (新) 所有癞子的值
+        const LAIZI_VALUES = [LAIZI_2_VALUE, SMALL_JOKER_VALUE, BIG_JOKER_VALUE];
+        
         const PLAY_TYPE = {
             INVALID: 'INVALID', SINGLE: 'SINGLE', PAIR: 'PAIR', TRIO: 'TRIO',
-            FULL_HOUSE: 'FULL_HOUSE', STRAIGHT: 'STRAIGHT', BOMB: 'BOMB'
+            FULL_HOUSE: 'FULL_HOUSE', STRAIGHT: 'STRAIGHT', BOMB: 'BOMB',
+            ROCKET: 'ROCKET' // 王炸
         };
 
         // --- 1. 初始化 Firebase ---
@@ -381,17 +397,14 @@
                   measurementId: "G-NNRVFGYEGZ"
                 };
                 
-                // (修复) appId 现在是你的 projectId，确保数据库路径一致
                 appId = firebaseConfig.projectId; 
 
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // 1. 设置监听器
                 onAuthStateChanged(auth, async (user) => {
                     if (!user) {
-                        // 未登录, 尝试登录 (只使用匿名登录)
                         loadingStatus.textContent = "正在登录...";
                         try {
                             await signInAnonymously(auth);
@@ -407,17 +420,14 @@
                     createRoomBtn.disabled = false;
                     joinRoomBtn.disabled = false;
 
-                    // 检查 URL 是否包含 room=...
                     const params = new URLSearchParams(window.location.search);
                     const roomIdFromUrl = params.get('room');
 
                     if (roomIdFromUrl) {
-                        // 自动加入
                         showMessage(`正在自动加入房间 ${roomIdFromUrl}...`);
                         document.getElementById('room-id-input').value = roomIdFromUrl;
                         await autoJoinRoom(roomIdFromUrl);
                     } else {
-                        // 正常显示大厅
                         showScreen('lobby');
                     }
                 });
@@ -431,7 +441,6 @@
         function getRoomIdFromInput(input) {
             let roomId = input.trim().toUpperCase();
             try {
-                // 检查是否是完整的 URL
                 const url = new URL(input);
                 const roomParam = url.searchParams.get('room');
                 if (roomParam) {
@@ -444,7 +453,7 @@
         }
 
         async function autoJoinRoom(roomId) {
-            joinRoomBtn.disabled = true; // 禁用按钮
+            joinRoomBtn.disabled = true; 
             
             const roomRef = doc(db, paths.room(roomId));
             
@@ -473,14 +482,14 @@
                     }
                 });
 
-                await joinRoom(roomId); // 事务成功, 订阅房间
+                await joinRoom(roomId); 
                 
             } catch (error) {
                 console.error("Auto-join Error:", error);
                 showMessage("自动加入失败: " + error.message);
                 joinRoomBtn.disabled = false;
-                showScreen('lobby'); // 失败, 返回大厅
-                window.history.pushState({}, '', window.location.pathname); // 清理 URL
+                showScreen('lobby'); 
+                window.history.pushState({}, '', window.location.pathname); 
             }
         }
 
@@ -516,7 +525,6 @@
 
         // --- 3. 路径助手 ---
         const paths = {
-            // (修复) 路径现在使用你固定的 appId (projectId)
             room: (roomId) => `/artifacts/${appId}/public/data/gandengyan-rooms/${roomId}`,
             hand: (roomId, uid) => `/artifacts/${appId}/public/data/gandengyan-hands/${roomId}-${uid}`
         };
@@ -538,6 +546,7 @@
                 status: "waiting", 
                 drawPile: [],
                 lastPlayedCards: [],
+                lastPlayerId: null, // (新) 添加最后出牌者
                 currentPlay: null,
                 currentPlayerIndex: 0,
                 isNewRound: true,
@@ -547,7 +556,7 @@
             
             try {
                 await setDoc(roomRef, initialRoomData);
-                await joinRoom(roomId); // 加入并监听
+                await joinRoom(roomId); 
             } catch (error) {
                 console.error("Create Room Error:", error);
                 showMessage("创建房间失败: " + error.message);
@@ -559,7 +568,7 @@
 
         joinRoomBtn.onclick = async () => {
             const inputVal = document.getElementById('room-id-input').value;
-            const roomId = getRoomIdFromInput(inputVal); // 使用新函数解析
+            const roomId = getRoomIdFromInput(inputVal); 
             
             if (!roomId) {
                  showMessage("请输入有效的房间 ID 或邀请链接");
@@ -596,7 +605,7 @@
                     }
                 });
 
-                await joinRoom(roomId); // 加入并监听
+                await joinRoom(roomId); 
                 
             } catch (error) {
                 console.error("Join Room Error:", error);
@@ -639,7 +648,6 @@
 
             showScreen('waiting-room');
             
-            // 显示完整的邀请链接
             const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
             document.getElementById('room-id-display').value = inviteLink;
             document.getElementById('waiting-room-prompt').textContent = "分享这个【邀请链接】给你的朋友:";
@@ -701,7 +709,6 @@
             }
             
             showScreen('lobby');
-            // 清理 URL, 避免下次刷新自动加入
             window.history.pushState({}, '', window.location.pathname);
         }
 
@@ -838,9 +845,15 @@
             if (!playerHandArea) return; 
             
             playerHandArea.innerHTML = '';
+            // (新) 排序: 3-A 在前, 癞子 (2, 小王, 大王) 在后
             localHand.sort((a, b) => {
-                if (a.value === JOKER_VALUE && b.value !== JOKER_VALUE) return 1;
-                if (a.value !== JOKER_VALUE && b.value === JOKER_VALUE) return -1;
+                const aIsLaizi = LAIZI_VALUES.includes(a.value);
+                const bIsLaizi = LAIZI_VALUES.includes(b.value);
+                
+                if (aIsLaizi && !bIsLaizi) return 1;
+                if (!aIsLaizi && bIsLaizi) return -1;
+
+                // 都是癞子, 或都不是癞子, 按 value 排序
                 return a.value - b.value || a.suit.localeCompare(b.suit);
             });
             
@@ -867,13 +880,26 @@
             if (isFaceDown) {
                 cardDiv.classList.add('face-down');
             } else {
-                cardDiv.dataset.suit = card.suit;
                 cardDiv.dataset.value = card.value;
-                cardDiv.innerHTML = `
-                    <div class="rank">${card.rank}</div>
-                    <div class="suit">${card.suit}</div>
-                    <div class="rank bottom">${card.rank}</div>
-                `;
+                
+                if (LAIZI_VALUES.includes(card.value)) {
+                    cardDiv.classList.add('laizi');
+                }
+
+                // (新) 渲染大小王
+                if (card.value === BIG_JOKER_VALUE) {
+                    cardDiv.innerHTML = `<div class="rank" style="font-size: 12px; line-height: 1.2;">BIG</div><div class="suit" style="font-size: 14px;">JOKER</div><div class="rank bottom" style="font-size: 12px; line-height: 1.2;">BIG</div>`;
+                } else if (card.value === SMALL_JOKER_VALUE) {
+                    cardDiv.innerHTML = `<div class="rank" style="font-size: 12px; line-height: 1.2;">small</div><div class="suit" style="font-size: 14px;">joker</div><div class="rank bottom" style="font-size: 12px; line-height: 1.2;">small</div>`;
+                } else {
+                    // 渲染普通牌
+                    cardDiv.dataset.suit = card.suit;
+                    cardDiv.innerHTML = `
+                        <div class="rank">${card.rank}</div>
+                        <div class="suit">${card.suit}</div>
+                        <div class="rank bottom">${card.rank}</div>
+                    `;
+                }
             }
             return cardDiv;
         }
@@ -911,6 +937,11 @@
                     deck.push({ suit, rank, value: RANK_VALUES[rank] });
                 }
             }
+            // (新) 添加大小王
+            deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
+            deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
+            
+            // 洗牌
             for (let i = deck.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -919,6 +950,7 @@
             const hands = [];
             for (let i = 0; i < numPlayers; i++) hands.push([]);
             
+            // 发牌
             for (let i = 0; i < 6; i++) {
                 for (let j = 0; j < numPlayers; j++) {
                     if (deck.length > 0) {
@@ -945,6 +977,7 @@
                     currentPlayerIndex: 0,
                     isNewRound: true,
                     lastPlayedCards: [],
+                    lastPlayerId: null, // (新)
                     currentPlay: null,
                     log: arrayUnion("游戏开始！")
                 });
@@ -988,6 +1021,7 @@
                     
                     let drawnCard = null;
                     let newDrawPile = [...roomData.drawPile];
+                    // (新) 摸牌逻辑: 只有在 isNewRound 时才摸牌
                     if (roomData.isNewRound && newDrawPile.length > 0) {
                         drawnCard = newDrawPile.pop();
                     }
@@ -1019,7 +1053,8 @@
                     transaction.update(roomRef, {
                         lastPlayedCards: selectedCards,
                         currentPlay: playInfo,
-                        isNewRound: false,
+                        lastPlayerId: userId, // (新) 记录最后出牌者
+                        isNewRound: false, // (新) 出牌后总是不是 newRound
                         currentPlayerIndex: newPlayerIndex,
                         players: updatedPlayers,
                         status: newStatus,
@@ -1077,11 +1112,15 @@
                     const updatedPlayers = [...roomData.players];
                     updatedPlayers[myPlayerIndex].cardCount = newHand.length;
                     
+                    // (新) 摸牌逻辑: 检查下一回合是否是新回合
+                    const nextPlayerUid = roomData.players[newPlayerIndex].uid;
+                    const nextPlayerIsNewRound = (nextPlayerUid === roomData.lastPlayerId) || roomData.lastPlayerId === null;
+
                     transaction.update(roomRef, {
                         drawPile: newDrawPile,
                         players: updatedPlayers,
                         currentPlayerIndex: newPlayerIndex,
-                        isNewRound: true,
+                        isNewRound: nextPlayerIsNewRound, // (新)
                         log: arrayUnion(logMsg)
                     });
                 });
@@ -1095,123 +1134,207 @@
             }
         };
         
-        // --- 9. 牌型验证 (含癞子) ---
-        
+        // --- 9. 牌型验证 (含所有癞子) ---
+
+        /**
+         * 检查一组牌的牌型 (新: 2, 小王, 大王 都是癞子)
+         */
         function getPlayType(cards) {
             if (!cards || cards.length === 0) return { type: PLAY_TYPE.INVALID };
 
             const len = cards.length;
             const sortedCards = [...cards].sort((a, b) => a.value - b.value);
-            
-            const jokers = sortedCards.filter(c => c.value === JOKER_VALUE);
-            const regulars = sortedCards.filter(c => c.value !== JOKER_VALUE);
-            const jokerCount = jokers.length;
-            
-            if (regulars.length > 0) {
-                const firstVal = regulars[0].value;
-                const isAllSameRank = regulars.every(v => v.value === firstVal);
 
-                if (isAllSameRank) {
-                    const totalCount = regulars.length + jokerCount;
-                    if (totalCount === 1) return { type: PLAY_TYPE.SINGLE, value: firstVal, cards: sortedCards, length: 1 };
-                    if (totalCount === 2) return { type: PLAY_TYPE.PAIR, value: firstVal, cards: sortedCards, length: 2 };
-                    if (totalCount === 3) return { type: PLAY_TYPE.TRIO, value: firstVal, cards: sortedCards, length: 3 };
-                    if (totalCount === 4) return { type: PLAY_TYPE.BOMB, value: firstVal, cards: sortedCards, length: 4 };
-                }
-            } else if (jokerCount > 0) {
-                // 纯癞子
-                if (jokerCount === 1) return { type: PLAY_TYPE.SINGLE, value: JOKER_VALUE, cards: sortedCards, length: 1 };
-                if (jokerCount === 2) return { type: PLAY_TYPE.PAIR, value: JOKER_VALUE, cards: sortedCards, length: 2 };
-                if (jokerCount === 3) return { type: PLAY_TYPE.TRIO, value: JOKER_VALUE, cards: sortedCards, length: 3 };
-                if (jokerCount === 4) return { type: PLAY_TYPE.BOMB, value: JOKER_VALUE, cards: sortedCards, length: 4 };
+            // 1. 检查王炸 (特殊, 不算癞子)
+            if (len === 2 && 
+                sortedCards[0].value === SMALL_JOKER_VALUE && 
+                sortedCards[1].value === BIG_JOKER_VALUE) {
+                return { type: PLAY_TYPE.ROCKET, value: 999, cards: sortedCards, length: 2 };
+            }
+            
+            // 2. 分离癞子和常规牌
+            const laizi = sortedCards.filter(c => LAIZI_VALUES.includes(c.value));
+            const regulars = sortedCards.filter(c => !LAIZI_VALUES.includes(c.value));
+            const laiziCount = laizi.length;
+
+            // 3. 查找最佳组合 (炸弹 > 顺子/三带二 > 三条 > 对子 > 单)
+            
+            // 查找炸弹 (4张)
+            if (len === 4) {
+                const bomb = findBomb(regulars, laiziCount);
+                if (bomb) return { type: PLAY_TYPE.BOMB, value: bomb.value, cards: sortedCards, length: 4 };
             }
 
-            // 顺子 (含癞子)
+            // 查找三带二 (5张)
+            if (len === 5) {
+                const fullHouse = findFullHouse(regulars, laiziCount);
+                if (fullHouse) return { type: PLAY_TYPE.FULL_HOUSE, value: fullHouse.value, cards: sortedCards, length: 5 };
+            }
+            
+            // 查找顺子 (>=3张, 且不能包含癞子值)
             if (len >= 3) {
-                let regValues = regulars.map(c => c.value);
-                let regUniqueValues = [...new Set(regValues)];
-                
-                // 纯癞子顺子
-                if (regUniqueValues.length === 0 && jokerCount >= 3) {
-                    // 默认从 3 开始
-                    return { type: PLAY_TYPE.STRAIGHT, value: 3 + len - 1, cards: sortedCards, length: len };
-                }
-                
-                if (regUniqueValues.length === 0) {
-                    return { type: PLAY_TYPE.INVALID };
-                }
-
-                const minVal = regUniqueValues[0];
-                // 2 不能参与顺子
-                if (minVal + len - 1 >= JOKER_VALUE) {
-                     if (regUniqueValues[regUniqueValues.length - 1] > 14) {
-                         return { type: PLAY_TYPE.INVALID };
-                     }
-                }
-
-                const straightLen = len;
-                let neededJokers = 0;
-                let currentVal = minVal;
-                let regIndex = 0;
-                
-                for(let i=0; i < straightLen; i++) {
-                    // 顺子不能包含 '2'
-                    if (currentVal >= JOKER_VALUE) {
-                        neededJokers = 99; // 标记为无效
-                        break;
-                    }
-                    
-                    if (regIndex < regUniqueValues.length && regUniqueValues[regIndex] === currentVal) {
-                        regIndex++;
-                    } else {
-                        neededJokers++;
-                    }
-                    currentVal++;
-                }
-
-                if (neededJokers <= jokerCount) {
-                    return { type: PLAY_TYPE.STRAIGHT, value: minVal + len - 1, cards: sortedCards, length: len };
-                }
+                const straight = findStraight(regulars, laiziCount, len);
+                if (straight) return { type: PLAY_TYPE.STRAIGHT, value: straight.value, cards: sortedCards, length: len };
             }
 
-            // 三带二 (Full House, 暂不支持癞子)
-            if (len === 5 && jokerCount === 0) {
-                const values = sortedCards.map(c => c.value);
-                const isFullHouse1 = (values[0] === values[1] && values[0] === values[2] && values[3] === values[4]); // 3+2
-                const isFullHouse2 = (values[0] === values[1] && values[2] === values[3] && values[2] === values[4]); // 2+3
-                
-                if (isFullHouse1) return { type: PLAY_TYPE.FULL_HOUSE, value: values[0], cards: sortedCards, length: 5 };
-                if (isFullHouse2) return { type: PLAY_TYPE.FULL_HOUSE, value: values[2], cards: sortedCards, length: 5 };
+            // 查找三条 (3张)
+            if (len === 3) {
+                const trio = findTrio(regulars, laiziCount);
+                if (trio) return { type: PLAY_TYPE.TRIO, value: trio.value, cards: sortedCards, length: 3 };
+            }
+
+            // 查找对子 (2张)
+            if (len === 2) {
+                const pair = findPair(regulars, laiziCount);
+                if (pair) return { type: PLAY_TYPE.PAIR, value: pair.value, cards: sortedCards, length: 2 };
             }
             
+            // 查找单张 (1张)
+            if (len === 1) {
+                const value = sortedCards[0].value;
+                return { type: PLAY_TYPE.SINGLE, value: value, cards: sortedCards, length: 1 };
+            }
+
             return { type: PLAY_TYPE.INVALID };
+        }
+        
+        // --- 牌型查找辅助函数 (新) ---
+
+        function findBomb(regulars, laiziCount) {
+            if (regulars.length + laiziCount !== 4) return null;
+            if (regulars.length === 0) return { value: 3 }; // 4个癞子当 炸弹3
+
+            const valueCounts = {};
+            regulars.forEach(c => { valueCounts[c.value] = (valueCounts[c.value] || 0) + 1; });
+            
+            for (const value in valueCounts) {
+                if (valueCounts[value] + laiziCount >= 4) {
+                    return { value: parseInt(value, 10) };
+                }
+            }
+            return null; // 无法组成炸弹
+        }
+
+        function findFullHouse(regulars, laiziCount) {
+            if (regulars.length + laiziCount !== 5) return null;
+            if (regulars.length <= 1) return { value: 3 }; // 纯癞子三带二, 算 33344
+
+            const valueCounts = {};
+            regulars.forEach(c => { valueCounts[c.value] = (valueCounts[c.value] || 0) + 1; });
+            const uniqueValues = Object.keys(valueCounts).map(Number);
+            
+            if (uniqueValues.length === 1) { // e.g., [4, 4] + 3 laizi -> 444xx
+                return { value: uniqueValues[0] };
+            }
+            
+            if (uniqueValues.length === 2) {
+                const val1 = uniqueValues[0];
+                const count1 = valueCounts[val1];
+                const val2 = uniqueValues[1];
+                const count2 = valueCounts[val2];
+                
+                // 检查 [val1]AAA + [val2]BB
+                let neededForTrio = 3 - count1;
+                let neededForPair = 2 - count2;
+                if (neededForTrio >= 0 && neededForPair >= 0 && neededForTrio + neededForPair <= laiziCount) {
+                    return { value: val1 };
+                }
+                
+                // 检查 [val1]AA + [val2]BBB
+                neededForTrio = 3 - count2;
+                neededForPair = 2 - count1;
+                if (neededForTrio >= 0 && neededForPair >= 0 && neededForTrio + neededForPair <= laiziCount) {
+                    return { value: val2 };
+                }
+            }
+            return null;
+        }
+        
+        function findStraight(regulars, laiziCount, totalLength) {
+            if (regulars.length === 0) { // 纯癞子顺子
+                return { value: 3 + totalLength - 1 }; // 算 3,4,5...
+            }
+            
+            const uniqueValues = [...new Set(regulars.map(c => c.value))];
+            uniqueValues.sort((a, b) => a - b);
+            
+            // 顺子不能包含 2 (15) 或王
+            if (uniqueValues.some(v => v >= LAIZI_2_VALUE)) return null; 
+            
+            const minVal = uniqueValues[0];
+            const maxVal = minVal + totalLength - 1;
+            
+            // 顺子不能到 2 (15) 或王
+            if (maxVal >= LAIZI_2_VALUE) return null;
+
+            let neededLaizi = 0;
+            for (let i = 0; i < totalLength; i++) {
+                const targetVal = minVal + i;
+                if (!uniqueValues.includes(targetVal)) {
+                    neededLaizi++;
+                }
+            }
+            
+            if (neededLaizi <= laiziCount) {
+                return { value: maxVal }; // 顺子的大小看最大的牌
+            }
+            return null;
+        }
+        
+        function findTrio(regulars, laiziCount) {
+            if (regulars.length + laiziCount !== 3) return null;
+            if (regulars.length === 0) return { value: 3 }; // 3个癞子当 333
+            
+            const firstVal = regulars[0].value;
+            if (regulars.every(c => c.value === firstVal)) {
+                return { value: firstVal };
+            }
+            return null;
+        }
+
+        function findPair(regulars, laiziCount) {
+            if (regulars.length + laiziCount !== 2) return null;
+            if (regulars.length === 0) return { value: 3 }; // 2个癞子当 33
+            
+            const firstVal = regulars[0].value;
+            if (regulars.every(c => c.value === firstVal)) {
+                return { value: firstVal };
+            }
+            return null;
         }
 
 
+        /**
+         * 检查出牌是否有效
+         */
         function isValidPlay(playInfo, lastPlay, isNewRound) {
             if (playInfo.type === PLAY_TYPE.INVALID) return false;
             
-            // 自由出牌
+            // 1. 自由出牌
             if (isNewRound) return true;
 
-            // 炸弹逻辑
+            // 2. 王炸逻辑
+            if (playInfo.type === PLAY_TYPE.ROCKET) return true; // 王炸最大
+            if (lastPlay.type === PLAY_TYPE.ROCKET) return false; // 王炸不能被压
+
+            // 3. 炸弹逻辑
             if (playInfo.type === PLAY_TYPE.BOMB) {
                 if (lastPlay.type === PLAY_TYPE.BOMB) {
-                    return playInfo.value > lastPlay.value;
+                    return playInfo.value > lastPlay.value; // 炸弹比大小
                 }
-                return true; // 炸弹可以压任何非炸弹
+                return true; // 炸弹可以压任何非炸弹/王炸
             }
             
-            // 如果上一个是炸弹，你必须出更大的炸弹
+            // 4. 上家是炸弹
             if (lastPlay.type === PLAY_TYPE.BOMB) {
-                return false;
+                return false; // 只有炸弹/王炸能压
             }
 
-            // 跟牌：牌型和长度必须一致
+            // 5. 跟牌：牌型和长度必须一致
             if (playInfo.type !== lastPlay.type) return false;
             if (playInfo.length !== lastPlay.length) return false;
             
-            // 比大小
+            // 6. 比大小
             return playInfo.value > lastPlay.value;
         }
 
