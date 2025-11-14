@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>干瞪眼 (在线版)</title>
+    <title>干瞪眼 (最终版-v2)</title>
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -118,11 +118,13 @@
         
         /* 癞子牌的特殊颜色 */
         .card.laizi {
-            color: #F59E0B; /* A golden/orange color for all laizi */
+            color: #F59E0B; /* 癞子 '2' 的颜色 */
             border: 2px solid #F59E0B;
         }
-        .card[data-value="17"].laizi { color: #EF4444; border-color: #EF4444; } /* Big Joker remains red */
-        .card[data-value="16"].laizi { color: #1F2937; border-color: #1F2937; } /* Small Joker remains black */
+        .card[data-value="17"] { color: #EF4444; } /* 大王 红色 */
+        .card[data-value="17"].laizi { border-color: #EF4444; }
+        .card[data-value="16"] { color: #1F2937; } /* 小王 黑色 */
+        .card[data-value="16"].laizi { border-color: #1F2937; }
 
 
         /* 玩家自己的手牌 */
@@ -131,9 +133,7 @@
         }
         #player-hand .card.selected {
             transform: translateY(-15px);
-            border-color: #FCD34D;
-            border-width: 3px;
-            box-shadow: 0 8px 15px rgba(252, 211, 77, 0.3);
+            border: 3px solid #FCD34D;
         }
         
         /* 桌面中央 */
@@ -366,13 +366,13 @@
 
         // --- 牌型定义 ---
         const SUITS = ['♥', '♦', '♣', '♠'];
-        const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+        const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']; // 2 是癞子
         const RANK_VALUES = {};
         RANKS.forEach((rank, index) => { RANK_VALUES[rank] = index + 3; }); // 3=3 ... A=14
         
-        const LAIZI_2_VALUE = RANK_VALUES['2']; // 15 (这是 2)
-        const SMALL_JOKER_VALUE = 16;
-        const BIG_JOKER_VALUE = 17;
+        const LAIZI_2_VALUE = 15; // 2
+        const SMALL_JOKER_VALUE = 16; // 小王
+        const BIG_JOKER_VALUE = 17; // 大王
         // (新) 所有癞子的值
         const LAIZI_VALUES = [LAIZI_2_VALUE, SMALL_JOKER_VALUE, BIG_JOKER_VALUE];
         
@@ -386,7 +386,6 @@
         
         async function initFirebase() {
             try {
-                // (修复) 直接使用你提供的 firebaseConfig
                 const firebaseConfig = {
                   apiKey: "AIzaSyCmSAI_ojtg7mEWQJ_hfZBWMTxy0nHh1nk",
                   authDomain: "gandengyan-32d4a.firebaseapp.com",
@@ -886,13 +885,13 @@
                     cardDiv.classList.add('laizi');
                 }
 
-                // (新) 渲染大小王
+                // (新) 渲染大小王和癞子2
                 if (card.value === BIG_JOKER_VALUE) {
                     cardDiv.innerHTML = `<div class="rank" style="font-size: 12px; line-height: 1.2;">BIG</div><div class="suit" style="font-size: 14px;">JOKER</div><div class="rank bottom" style="font-size: 12px; line-height: 1.2;">BIG</div>`;
                 } else if (card.value === SMALL_JOKER_VALUE) {
                     cardDiv.innerHTML = `<div class="rank" style="font-size: 12px; line-height: 1.2;">small</div><div class="suit" style="font-size: 14px;">joker</div><div class="rank bottom" style="font-size: 12px; line-height: 1.2;">small</div>`;
                 } else {
-                    // 渲染普通牌
+                    // 渲染普通牌 (包括 2)
                     cardDiv.dataset.suit = card.suit;
                     cardDiv.innerHTML = `
                         <div class="rank">${card.rank}</div>
@@ -931,13 +930,16 @@
                 return;
             }
             
+            // (新) 创建包含癞子和Joker的牌堆
             let deck = [];
             for (const suit of SUITS) {
-                for (const rank of RANKS) {
+                for (const rank of RANKS) { // RANKS 是 3-A
                     deck.push({ suit, rank, value: RANK_VALUES[rank] });
                 }
+                // 添加 4 张 2 (癞子)
+                deck.push({ suit, rank: '2', value: LAIZI_2_VALUE });
             }
-            // (新) 添加大小王
+            // 添加大小王
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
             
@@ -1021,18 +1023,34 @@
                     
                     let drawnCard = null;
                     let newDrawPile = [...roomData.drawPile];
-                    // (新) 摸牌逻辑: 只有在 isNewRound 时才摸牌
-                    if (roomData.isNewRound && newDrawPile.length > 0) {
+                    
+                    // (新) 检查是否是新回合
+                    const isNewRound = roomData.isNewRound;
+                    
+                    if (isNewRound && newDrawPile.length > 0) {
                         drawnCard = newDrawPile.pop();
                     }
                     
                     const playInfo = getPlayType(selectedCards);
 
-                    if (!isValidPlay(playInfo, roomData.currentPlay, roomData.isNewRound)) {
+                    if (!isValidPlay(playInfo, roomData.currentPlay, isNewRound)) {
                         throw new Error("无效的出牌！");
                     }
                     
                     let newHand = handData.cards.filter((_, index) => !selectedIndices.includes(index));
+                    
+                    // (新) "无法获胜" Bug 修复:
+                    // 1. 先检查是否获胜
+                    let newStatus = roomData.status;
+                    let winner = null;
+                    if (newHand.length === 0) {
+                        newStatus = "finished";
+                        winner = userId;
+                        // 获胜了, 就不再摸牌
+                        drawnCard = null; 
+                    }
+                    
+                    // 2. 如果没有获胜, 并且刚才（按规则）摸了牌, 把它加入手牌
                     if (drawnCard) {
                         newHand.push(drawnCard);
                     }
@@ -1042,13 +1060,6 @@
                     const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
                     const updatedPlayers = [...roomData.players];
                     updatedPlayers[myPlayerIndex].cardCount = newHand.length;
-                    
-                    let newStatus = roomData.status;
-                    let winner = null;
-                    if (newHand.length === 0) {
-                        newStatus = "finished";
-                        winner = userId;
-                    }
                     
                     transaction.update(roomRef, {
                         lastPlayedCards: selectedCards,
