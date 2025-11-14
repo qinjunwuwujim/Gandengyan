@@ -363,9 +363,13 @@
         const gameOverModal = document.getElementById('game-over-modal');
         const createRoomBtn = document.getElementById('create-room-btn');
         const joinRoomBtn = document.getElementById('join-room-btn');
+        const playButton = document.getElementById('play-button');
+        const passDrawButton = document.getElementById('pass-draw-button');
 
         // --- 牌型定义 ---
-        const SUITS = ['♥', '♦', '♣', '♠'];
+        // (新) 牌序和花色
+        const SUITS = ['♦', '♣', '♥', '♠']; // 方片(小) -> 黑桃(大)
+        const SUIT_VALUES = { '♦': 1, '♣': 2, '♥': 3, '♠': 4 };
         const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']; // 2 是癞子
         const RANK_VALUES = {};
         RANKS.forEach((rank, index) => { RANK_VALUES[rank] = index + 3; }); // 3=3 ... A=14
@@ -386,6 +390,7 @@
         
         async function initFirebase() {
             try {
+                // (修复) 直接使用你提供的 firebaseConfig
                 const firebaseConfig = {
                   apiKey: "AIzaSyCmSAI_ojtg7mEWQJ_hfZBWMTxy0nHh1nk",
                   authDomain: "gandengyan-32d4a.firebaseapp.com",
@@ -396,14 +401,17 @@
                   measurementId: "G-NNRVFGYEGZ"
                 };
                 
+                // (修复) appId 现在是你的 projectId，确保数据库路径一致
                 appId = firebaseConfig.projectId; 
 
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
+                // 1. 设置监听器
                 onAuthStateChanged(auth, async (user) => {
                     if (!user) {
+                        // 未登录, 尝试登录 (只使用匿名登录)
                         loadingStatus.textContent = "正在登录...";
                         try {
                             await signInAnonymously(auth);
@@ -419,14 +427,17 @@
                     createRoomBtn.disabled = false;
                     joinRoomBtn.disabled = false;
 
+                    // 检查 URL 是否包含 room=...
                     const params = new URLSearchParams(window.location.search);
                     const roomIdFromUrl = params.get('room');
 
                     if (roomIdFromUrl) {
+                        // 自动加入
                         showMessage(`正在自动加入房间 ${roomIdFromUrl}...`);
                         document.getElementById('room-id-input').value = roomIdFromUrl;
                         await autoJoinRoom(roomIdFromUrl);
                     } else {
+                        // 正常显示大厅
                         showScreen('lobby');
                     }
                 });
@@ -440,6 +451,7 @@
         function getRoomIdFromInput(input) {
             let roomId = input.trim().toUpperCase();
             try {
+                // 检查是否是完整的 URL
                 const url = new URL(input);
                 const roomParam = url.searchParams.get('room');
                 if (roomParam) {
@@ -452,7 +464,7 @@
         }
 
         async function autoJoinRoom(roomId) {
-            joinRoomBtn.disabled = true; 
+            joinRoomBtn.disabled = true; // 禁用按钮
             
             const roomRef = doc(db, paths.room(roomId));
             
@@ -481,14 +493,14 @@
                     }
                 });
 
-                await joinRoom(roomId); 
+                await joinRoom(roomId); // 事务成功, 订阅房间
                 
             } catch (error) {
                 console.error("Auto-join Error:", error);
                 showMessage("自动加入失败: " + error.message);
                 joinRoomBtn.disabled = false;
-                showScreen('lobby'); 
-                window.history.pushState({}, '', window.location.pathname); 
+                showScreen('lobby'); // 失败, 返回大厅
+                window.history.pushState({}, '', window.location.pathname); // 清理 URL
             }
         }
 
@@ -524,6 +536,7 @@
 
         // --- 3. 路径助手 ---
         const paths = {
+            // (修复) 路径现在使用你固定的 appId (projectId)
             room: (roomId) => `/artifacts/${appId}/public/data/gandengyan-rooms/${roomId}`,
             hand: (roomId, uid) => `/artifacts/${appId}/public/data/gandengyan-hands/${roomId}-${uid}`
         };
@@ -544,6 +557,7 @@
                 players: [{ uid: userId, name: `玩家 1`, cardCount: 0 }], 
                 status: "waiting", 
                 drawPile: [],
+                discardPile: [], // (新) 废牌堆
                 lastPlayedCards: [],
                 lastPlayerId: null, // (新) 添加最后出牌者
                 currentPlay: null,
@@ -555,7 +569,7 @@
             
             try {
                 await setDoc(roomRef, initialRoomData);
-                await joinRoom(roomId); 
+                await joinRoom(roomId); // 加入并监听
             } catch (error) {
                 console.error("Create Room Error:", error);
                 showMessage("创建房间失败: " + error.message);
@@ -567,7 +581,7 @@
 
         joinRoomBtn.onclick = async () => {
             const inputVal = document.getElementById('room-id-input').value;
-            const roomId = getRoomIdFromInput(inputVal); 
+            const roomId = getRoomIdFromInput(inputVal); // 使用新函数解析
             
             if (!roomId) {
                  showMessage("请输入有效的房间 ID 或邀请链接");
@@ -604,7 +618,7 @@
                     }
                 });
 
-                await joinRoom(roomId); 
+                await joinRoom(roomId); // 加入并监听
                 
             } catch (error) {
                 console.error("Join Room Error:", error);
@@ -647,6 +661,7 @@
 
             showScreen('waiting-room');
             
+            // 显示完整的邀请链接
             const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
             document.getElementById('room-id-display').value = inviteLink;
             document.getElementById('waiting-room-prompt').textContent = "分享这个【邀请链接】给你的朋友:";
@@ -708,6 +723,7 @@
             }
             
             showScreen('lobby');
+            // 清理 URL, 避免下次刷新自动加入
             window.history.pushState({}, '', window.location.pathname);
         }
 
@@ -814,15 +830,38 @@
                     });
                 }
                 
+                // (新) 核心按钮逻辑
                 const isMyTurn = roomData.currentPlayerIndex === myPlayerIndex;
-                document.getElementById('play-button').disabled = !isMyTurn;
-                document.getElementById('pass-draw-button').disabled = !isMyTurn;
+                const isNewRound = roomData.isNewRound;
                 
-                if (roomData.drawPile.length === 0) {
-                    document.getElementById('pass-draw-button').textContent = '过 (Pass)';
+                if (isMyTurn && isNewRound) {
+                    // 强制摸牌回合
+                    playButton.disabled = true;
+                    passDrawButton.disabled = false;
+                    
+                    if (roomData.drawPile.length === 0 && roomData.discardPile.length === 0) {
+                         passDrawButton.textContent = '无法摸牌 (跳过)';
+                         // 理论上不应该发生，因为pass/draw会处理。但作为保险。
+                    } else {
+                        passDrawButton.textContent = '摸牌 (新回合)';
+                    }
+                    
+                } else if (isMyTurn && !isNewRound) {
+                    // 正常出牌回合
+                    playButton.disabled = false;
+                    passDrawButton.disabled = false;
+                    
+                    if (roomData.drawPile.length === 0 && roomData.discardPile.length === 0) {
+                        passDrawButton.textContent = '过 (Pass)';
+                    } else {
+                        passDrawButton.textContent = '摸牌 / 过';
+                    }
                 } else {
-                    document.getElementById('pass-draw-button').textContent = '摸牌 / 过';
+                    // 不是我的回合
+                    playButton.disabled = true;
+                    passDrawButton.disabled = true;
                 }
+
 
             } else if (roomData.status === "finished") {
                 document.getElementById('game-over-title').textContent = roomData.winner === userId ? "恭喜你！" : "很遗憾...";
@@ -844,7 +883,7 @@
             if (!playerHandArea) return; 
             
             playerHandArea.innerHTML = '';
-            // (新) 排序: 3-A 在前, 癞子 (2, 小王, 大王) 在后
+            // (新) 排序: 3-A 在前, 癞子 (2, 小王, 大王) 在后, 相同 value 按花色排
             localHand.sort((a, b) => {
                 const aIsLaizi = LAIZI_VALUES.includes(a.value);
                 const bIsLaizi = LAIZI_VALUES.includes(b.value);
@@ -852,8 +891,12 @@
                 if (aIsLaizi && !bIsLaizi) return 1;
                 if (!aIsLaizi && bIsLaizi) return -1;
 
-                // 都是癞子, 或都不是癞子, 按 value 排序
-                return a.value - b.value || a.suit.localeCompare(b.suit);
+                // 都是癞子, 或都不是癞子, 按 value 和 suit 排序
+                // (新) 花色排序
+                const suitScoreA = a.suit ? SUIT_VALUES[a.suit] : (a.value === 16 ? 1 : 2); // 小王=1, 大王=2
+                const suitScoreB = b.suit ? SUIT_VALUES[b.suit] : (b.value === 16 ? 1 : 2);
+                
+                return a.value - b.value || suitScoreA - suitScoreB;
             });
             
             localHand.forEach((card, index) => {
@@ -915,6 +958,15 @@
         
         // --- 8. 游戏逻辑 (开始/出牌/摸牌) ---
         
+        // (新) 洗牌辅助函数
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
         document.getElementById('start-game-btn').onclick = async () => {
             if (!currentRoomId || !appId) return;
             
@@ -930,7 +982,7 @@
                 return;
             }
             
-            // (新) 创建包含癞子和Joker的牌堆
+            // (新) 创建 54 张牌
             let deck = [];
             for (const suit of SUITS) {
                 for (const rank of RANKS) { // RANKS 是 3-A
@@ -943,23 +995,37 @@
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
             
-            // 洗牌
-            for (let i = deck.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [deck[i], deck[j]] = [deck[j], deck[i]];
-            }
+            deck = shuffleArray(deck);
             
             const hands = [];
+            let smallestCardScore = 999;
+            let firstPlayerIndex = 0;
+            
             for (let i = 0; i < numPlayers; i++) hands.push([]);
             
-            // 发牌
-            for (let i = 0; i < 6; i++) {
+            // (新) 发 5 张牌
+            for (let i = 0; i < 5; i++) {
                 for (let j = 0; j < numPlayers; j++) {
                     if (deck.length > 0) {
-                        hands[j].push(deck.pop());
+                        const card = deck.pop();
+                        hands[j].push(card);
                     }
                 }
             }
+            
+            // (新) 查找谁先出牌 (3♦ 最小)
+            hands.forEach((hand, playerIndex) => {
+                hand.forEach(card => {
+                    // 癞子牌(2, JOKER) 不参与最小牌比较
+                    if (LAIZI_VALUES.includes(card.value)) return; 
+                    
+                    const score = card.value * 10 + SUIT_VALUES[card.suit];
+                    if (score < smallestCardScore) {
+                        smallestCardScore = score;
+                        firstPlayerIndex = playerIndex;
+                    }
+                });
+            });
             
             try {
                 const batch = writeBatch(db);
@@ -970,18 +1036,19 @@
                     batch.set(handRef, { cards: hands[i] });
                 }
                 
-                const updatedPlayers = players.map(p => ({ ...p, cardCount: 6 }));
+                const updatedPlayers = players.map(p => ({ ...p, cardCount: 5 }));
                 
                 batch.update(roomRef, {
                     status: "playing",
                     drawPile: deck,
+                    discardPile: [], // (新)
                     players: updatedPlayers,
-                    currentPlayerIndex: 0,
+                    currentPlayerIndex: firstPlayerIndex, // (新)
                     isNewRound: true,
                     lastPlayedCards: [],
-                    lastPlayerId: null, // (新)
+                    lastPlayerId: null, 
                     currentPlay: null,
-                    log: arrayUnion("游戏开始！")
+                    log: arrayUnion(`游戏开始！${players[firstPlayerIndex].name} (有最小牌) 先出。`)
                 });
                 
                 await batch.commit();
@@ -993,14 +1060,13 @@
         };
 
         // 玩家出牌
-        document.getElementById('play-button').onclick = async () => {
-            const btn = document.getElementById('play-button');
+        playButton.onclick = async () => {
             if (selectedIndices.length === 0) {
                 showMessage("请选择要出的牌");
                 return;
             }
             if (!currentRoomId || !appId) return;
-            btn.disabled = true;
+            playButton.disabled = true; // 先禁用
 
             const selectedCards = selectedIndices.map(i => localHand[i]).sort((a, b) => a.value - b.value);
 
@@ -1020,39 +1086,21 @@
                     
                     if (roomData.status !== "playing") throw new Error("游戏未在进行");
                     if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
-                    
-                    let drawnCard = null;
-                    let newDrawPile = [...roomData.drawPile];
-                    
-                    // (新) 检查是否是新回合
-                    const isNewRound = roomData.isNewRound;
-                    
-                    if (isNewRound && newDrawPile.length > 0) {
-                        drawnCard = newDrawPile.pop();
-                    }
+                    if (roomData.isNewRound === true) throw new Error("在新回合，你必须先摸牌！"); // (新) 安全检查
                     
                     const playInfo = getPlayType(selectedCards);
 
-                    if (!isValidPlay(playInfo, roomData.currentPlay, isNewRound)) {
+                    if (!isValidPlay(playInfo, roomData.currentPlay, false)) { // isNewRound 总是 false
                         throw new Error("无效的出牌！");
                     }
                     
                     let newHand = handData.cards.filter((_, index) => !selectedIndices.includes(index));
                     
-                    // (新) "无法获胜" Bug 修复:
-                    // 1. 先检查是否获胜
                     let newStatus = roomData.status;
                     let winner = null;
                     if (newHand.length === 0) {
                         newStatus = "finished";
                         winner = userId;
-                        // 获胜了, 就不再摸牌
-                        drawnCard = null; 
-                    }
-                    
-                    // 2. 如果没有获胜, 并且刚才（按规则）摸了牌, 把它加入手牌
-                    if (drawnCard) {
-                        newHand.push(drawnCard);
                     }
                     
                     transaction.set(handRef, { cards: newHand });
@@ -1063,15 +1111,15 @@
                     
                     transaction.update(roomRef, {
                         lastPlayedCards: selectedCards,
+                        discardPile: arrayUnion(...selectedCards), // (新) 牌进入废牌堆
                         currentPlay: playInfo,
-                        lastPlayerId: userId, // (新) 记录最后出牌者
-                        isNewRound: false, // (新) 出牌后总是不是 newRound
+                        lastPlayerId: userId, // 记录最后出牌者
+                        isNewRound: false, // 出牌后总是不是 newRound
                         currentPlayerIndex: newPlayerIndex,
                         players: updatedPlayers,
                         status: newStatus,
                         winner: winner,
-                        drawPile: newDrawPile,
-                        log: arrayUnion(`${roomData.players[myPlayerIndex].name} ${drawnCard ? '摸牌并' : ''}出牌了。`)
+                        log: arrayUnion(`${roomData.players[myPlayerIndex].name} 出牌了。`)
                     });
                 });
                 
@@ -1080,15 +1128,14 @@
             } catch (error) {
                 console.error("Play Card Error:", error);
                 showMessage(error.message);
-                btn.disabled = false;
+                // 失败时不需要重置 playButton.disabled, onSnapshot 会处理
             }
         };
         
-        // 玩家摸牌 / 过
-        document.getElementById('pass-draw-button').onclick = async () => {
-            const btn = document.getElementById('pass-draw-button');
+        // (新) 玩家摸牌 / 过 / 强制摸牌
+        passDrawButton.onclick = async () => {
             if (!currentRoomId || !appId) return;
-            btn.disabled = true;
+            passDrawButton.disabled = true; // 先禁用
             
             const roomRef = doc(db, paths.room(currentRoomId));
             const handRef = doc(db, paths.hand(currentRoomId, userId));
@@ -1108,32 +1155,64 @@
                     if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
                     
                     const newHand = [...handData.cards];
-                    const newDrawPile = [...roomData.drawPile];
-                    let logMsg = `${roomData.players[myPlayerIndex].name} 选择'过'。`;
+                    let newDrawPile = [...roomData.drawPile];
+                    let newDiscardPile = [...roomData.discardPile];
+                    let logMsg = "";
                     
+                    // 摸牌逻辑
+                    let drawnCard = null;
                     if (newDrawPile.length > 0) {
-                        const drawnCard = newDrawPile.pop();
+                        drawnCard = newDrawPile.pop();
+                    } else if (newDiscardPile.length > 0) {
+                        newDrawPile = shuffleArray(newDiscardPile);
+                        newDiscardPile = [];
+                        drawnCard = newDrawPile.pop();
+                        logMsg = "(洗牌)";
+                    }
+                    
+                    if (drawnCard) {
                         newHand.push(drawnCard);
-                        logMsg = `${roomData.players[myPlayerIndex].name} 摸了一张牌。`;
                     }
                     
                     transaction.set(handRef, { cards: newHand });
-                    
-                    const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
                     const updatedPlayers = [...roomData.players];
                     updatedPlayers[myPlayerIndex].cardCount = newHand.length;
                     
-                    // (新) 摸牌逻辑: 检查下一回合是否是新回合
-                    const nextPlayerUid = roomData.players[newPlayerIndex].uid;
-                    const nextPlayerIsNewRound = (nextPlayerUid === roomData.lastPlayerId) || roomData.lastPlayerId === null;
+                    // (新) 区分是 "强制摸牌" 还是 "摸牌/过"
+                    if (roomData.isNewRound) {
+                        // --- 这是强制摸牌 ---
+                        // 回合不推进, 只是摸牌
+                        logMsg = `${roomData.players[myPlayerIndex].name} 摸了一张牌 (新回合) ${logMsg}。`;
+                        
+                        transaction.update(roomRef, {
+                            drawPile: newDrawPile,
+                            discardPile: newDiscardPile,
+                            players: updatedPlayers,
+                            isNewRound: false, // (关键) 摸完牌, 不再是新回合
+                            currentPlay: null, // (关键) 允许自由出牌
+                            log: arrayUnion(logMsg)
+                        });
+                        
+                    } else {
+                        // --- 这是 摸牌/过 ---
+                        // 回合推进
+                        logMsg = `${roomData.players[myPlayerIndex].name} ${drawnCard ? '摸牌并' : ''}'过'了 ${logMsg}。`;
+                        
+                        const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
+                        
+                        // 检查下一回合是否是新回合
+                        const nextPlayerUid = roomData.players[newPlayerIndex].uid;
+                        const nextPlayerIsNewRound = (nextPlayerUid === roomData.lastPlayerId) || roomData.lastPlayerId === null;
 
-                    transaction.update(roomRef, {
-                        drawPile: newDrawPile,
-                        players: updatedPlayers,
-                        currentPlayerIndex: newPlayerIndex,
-                        isNewRound: nextPlayerIsNewRound, // (新)
-                        log: arrayUnion(logMsg)
-                    });
+                        transaction.update(roomRef, {
+                            drawPile: newDrawPile,
+                            discardPile: newDiscardPile,
+                            players: updatedPlayers,
+                            currentPlayerIndex: newPlayerIndex,
+                            isNewRound: nextPlayerIsNewRound, // (新)
+                            log: arrayUnion(logMsg)
+                        });
+                    }
                 });
                 
                 selectedIndices = [];
@@ -1141,7 +1220,7 @@
             } catch (error) {
                 console.error("Pass/Draw Error:", error);
                 showMessage(error.message);
-                btn.disabled = false;
+                // 失败时不需要重置 passDrawButton.disabled, onSnapshot 会处理
             }
         };
         
@@ -1263,7 +1342,7 @@
         
         function findStraight(regulars, laiziCount, totalLength) {
             if (regulars.length === 0) { // 纯癞子顺子
-                return { value: 3 + totalLength - 1 }; // 算 3,4,5...
+                return { value: 3 }; // 算 3,4,5... (value 总是 3)
             }
             
             const uniqueValues = [...new Set(regulars.map(c => c.value))];
@@ -1287,7 +1366,7 @@
             }
             
             if (neededLaizi <= laiziCount) {
-                return { value: maxVal }; // 顺子的大小看最大的牌
+                return { value: minVal }; // (新) 顺子的大小看最小的牌
             }
             return null;
         }
@@ -1316,7 +1395,7 @@
 
 
         /**
-         * 检查出牌是否有效
+         * (新) 检查出牌是否有效 (接龙规则)
          */
         function isValidPlay(playInfo, lastPlay, isNewRound) {
             if (playInfo.type === PLAY_TYPE.INVALID) return false;
@@ -1331,7 +1410,8 @@
             // 3. 炸弹逻辑
             if (playInfo.type === PLAY_TYPE.BOMB) {
                 if (lastPlay.type === PLAY_TYPE.BOMB) {
-                    return playInfo.value > lastPlay.value; // 炸弹比大小
+                    // (新) 炸弹必须 +1
+                    return playInfo.value === lastPlay.value + 1;
                 }
                 return true; // 炸弹可以压任何非炸弹/王炸
             }
@@ -1343,10 +1423,17 @@
 
             // 5. 跟牌：牌型和长度必须一致
             if (playInfo.type !== lastPlay.type) return false;
-            if (playInfo.length !== lastPlay.length) return false;
+            if (playInfo.type === PLAY_TYPE.STRAIGHT && playInfo.length !== lastPlay.length) return false;
             
-            // 6. 比大小
-            return playInfo.value > lastPlay.value;
+            // 6. (新) 核心 "+1" 逻辑 (K->A->2->S.Joker->B.Joker)
+            
+            // 大王(17) 是最大的, 无法被接
+            if (lastPlay.value === BIG_JOKER_VALUE) { 
+                return false; 
+            }
+            
+            // 适用于 3->4, 4->5 ... A->2 ... S.Joker->B.Joker
+            return playInfo.value === lastPlay.value + 1;
         }
 
         // --- 启动 ---
