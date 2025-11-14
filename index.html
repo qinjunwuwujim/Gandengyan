@@ -1070,6 +1070,9 @@
             playButton.disabled = true; // 先禁用
 
             const selectedCards = selectedIndices.map(i => localHand[i]).sort((a, b) => a.value - b.value);
+            // (BUG 修复) 
+            // 1. 获取要打出的牌的ID
+            const playedCardIds = selectedCards.map(c => (c.suit || '') + c.rank); // e.g., ["♦3", "JokerBig"]
 
             const roomRef = doc(db, paths.room(currentRoomId));
             const handRef = doc(db, paths.hand(currentRoomId, userId));
@@ -1101,7 +1104,29 @@
                         throw new Error("无效的出牌！");
                     }
                     
-                    let newHand = handData.cards.filter((_, index) => !selectedIndices.includes(index));
+                    
+                    // (BUG 修复) 
+                    // 2. 不按 index 过滤, 而是按 cardId 过滤
+                    let idsToRemove = [...playedCardIds];
+                    const newHand = handData.cards.filter(card => {
+                        const cardId = (card.suit || '') + card.rank;
+                        const indexToRemove = idsToRemove.indexOf(cardId);
+                        
+                        if (indexToRemove > -1) {
+                            // 这是一个要打出的牌, 从 "待移除" 列表中删除它, 并过滤掉 (返回 false)
+                            idsToRemove.splice(indexToRemove, 1);
+                            return false; // 过滤
+                        } else {
+                            // 这是一个手牌, 保留 (返回 true)
+                            return true; // 保留
+                        }
+                    });
+
+                    // 3. 检查是否所有牌都在数据库手牌中找到了
+                    if (idsToRemove.length > 0) {
+                        console.error("手牌不同步! 没找到牌:", idsToRemove);
+                        throw new Error("出牌失败 (手牌不同步)");
+                    }
                     
                     // (新) 修复 "无法获胜" bug
                     let newStatus = roomData.status;
