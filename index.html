@@ -830,24 +830,25 @@
                     });
                 }
                 
-                // (新) 核心按钮逻辑
+                // (新) 核心按钮逻辑 + (修复) 修复第一回合
                 const isMyTurn = roomData.currentPlayerIndex === myPlayerIndex;
                 const isNewRound = roomData.isNewRound;
+                // (修复) 增加 isGameStart 检查
+                const isGameStart = (roomData.lastPlayerId === null); 
                 
-                if (isMyTurn && isNewRound) {
+                if (isMyTurn && isNewRound && !isGameStart) {
                     // 强制摸牌回合
                     playButton.disabled = true;
                     passDrawButton.disabled = false;
                     
                     if (roomData.drawPile.length === 0 && roomData.discardPile.length === 0) {
                          passDrawButton.textContent = '无法摸牌 (跳过)';
-                         // 理论上不应该发生，因为pass/draw会处理。但作为保险。
                     } else {
                         passDrawButton.textContent = '摸牌 (新回合)';
                     }
                     
-                } else if (isMyTurn && !isNewRound) {
-                    // 正常出牌回合
+                } else if (isMyTurn && (!isNewRound || isGameStart)) {
+                    // 正常出牌回合 (或第一回合)
                     playButton.disabled = false;
                     passDrawButton.disabled = false;
                     
@@ -1046,7 +1047,7 @@
                     currentPlayerIndex: firstPlayerIndex, // (新)
                     isNewRound: true,
                     lastPlayedCards: [],
-                    lastPlayerId: null, 
+                    lastPlayerId: null, // (新) 游戏开始时 lastPlayerId 为 null
                     currentPlay: null,
                     log: arrayUnion(`游戏开始！${players[firstPlayerIndex].name} (有最小牌) 先出。`)
                 });
@@ -1086,11 +1087,17 @@
                     
                     if (roomData.status !== "playing") throw new Error("游戏未在进行");
                     if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
-                    if (roomData.isNewRound === true) throw new Error("在新回合，你必须先摸牌！"); // (新) 安全检查
+                    
+                    // (新) 修复 "无法获胜" bug
+                    // 检查是否是强制摸牌回合 (但不是游戏第一回合)
+                    const isGameStart = (roomData.lastPlayerId === null);
+                    if (roomData.isNewRound && !isGameStart) {
+                         throw new Error("在新回合，你必须先摸牌！");
+                    }
                     
                     const playInfo = getPlayType(selectedCards);
 
-                    if (!isValidPlay(playInfo, roomData.currentPlay, false)) { // isNewRound 总是 false
+                    if (!isValidPlay(playInfo, roomData.currentPlay, isGameStart ? true : roomData.isNewRound)) { 
                         throw new Error("无效的出牌！");
                     }
                     
@@ -1164,10 +1171,13 @@
                     if (newDrawPile.length > 0) {
                         drawnCard = newDrawPile.pop();
                     } else if (newDiscardPile.length > 0) {
-                        newDrawPile = shuffleArray(newDiscardPile);
+                        // (新) 洗牌
+                        newDrawPile = shuffleArray(newDiscardPile.filter(c => c)); // 过滤 null
                         newDiscardPile = [];
-                        drawnCard = newDrawPile.pop();
-                        logMsg = "(洗牌)";
+                        if (newDrawPile.length > 0) {
+                           drawnCard = newDrawPile.pop();
+                           logMsg = "(洗牌)";
+                        }
                     }
                     
                     if (drawnCard) {
@@ -1202,7 +1212,8 @@
                         
                         // 检查下一回合是否是新回合
                         const nextPlayerUid = roomData.players[newPlayerIndex].uid;
-                        const nextPlayerIsNewRound = (nextPlayerUid === roomData.lastPlayerId) || roomData.lastPlayerId === null;
+                        // (新) 如果 lastPlayerId 为 null (游戏刚开始), 也不算新回合
+                        const nextPlayerIsNewRound = (roomData.lastPlayerId !== null && nextPlayerUid === roomData.lastPlayerId);
 
                         transaction.update(roomRef, {
                             drawPile: newDrawPile,
