@@ -375,7 +375,7 @@
         let gameUnsubscribe = null;
         let handUnsubscribe = null;
         let myPlayerIndex = 0; 
-        let hostFinishTimeout = null; // (新) 用于胜利结算的 timeout
+        let hostFinishTimeout = null; 
 
         // --- UI 元素 ---
         const loadingScreen = document.getElementById('loading-screen');
@@ -403,7 +403,10 @@
         
         const PLAY_TYPE = {
             INVALID: 'INVALID', SINGLE: 'SINGLE', PAIR: 'PAIR', TRIO: 'TRIO',
-            FULL_HOUSE: 'FULL_HOUSE', STRAIGHT: 'STRAIGHT', BOMB: 'BOMB',
+            FULL_HOUSE: 'FULL_HOUSE', 
+            STRAIGHT: 'STRAIGHT', 
+            CONSECUTIVE_PAIRS: 'CONSECUTIVE_PAIRS', // (新) 连对
+            BOMB: 'BOMB',
             ROCKET: 'ROCKET' // 王炸
         };
 
@@ -490,7 +493,6 @@
                     
                     const roomData = roomSnap.data();
                     if (roomData.status !== "waiting") {
-                        // (新) 如果游戏结束，也允许加入观战/等待下一局
                         if(roomData.status === "finished") {
                            // 允许加入
                         } else {
@@ -507,7 +509,7 @@
                             uid: userId, 
                             name: `玩家 ${roomData.players.length + 1}`, 
                             cardCount: 0, 
-                            score: 10000 // (新) 初始积分
+                            score: 10000 
                         };
                         transaction.update(roomRef, {
                             players: arrayUnion(newPlayer),
@@ -580,24 +582,24 @@
                     uid: userId, 
                     name: `玩家 1`, 
                     cardCount: 0, 
-                    score: 10000 // (新) 初始积分
+                    score: 10000 
                 }], 
                 status: "waiting", 
                 drawPile: [],
                 discardPile: [], 
                 lastPlayedCards: [],
-                displayCards: [], // (新) 癞子显示
+                displayCards: [], 
                 lastPlayerId: null, 
                 currentPlay: null,
                 currentPlayerIndex: 0,
                 isNewRound: true,
                 log: [`房间 ${roomId} 已创建。`],
                 winner: null,
-                gameNumber: 1, // (新)
-                bombCount: 0,  // (新)
-                baseBet: 100,  // (新)
-                smallestCard: null, // (新)
-                smallestCardPlayerIndex: 0 // (新)
+                gameNumber: 1, 
+                bombCount: 0,  
+                baseBet: 100,  
+                smallestCard: null, 
+                smallestCardPlayerIndex: 0 
             };
             
             try {
@@ -647,7 +649,7 @@
                             uid: userId, 
                             name: `玩家 ${roomData.players.length + 1}`, 
                             cardCount: 0,
-                            score: 10000 // (新) 初始积分
+                            score: 10000 
                         };
                         transaction.update(roomRef, {
                             players: arrayUnion(newPlayer),
@@ -656,7 +658,7 @@
                     }
                 });
 
-                await joinRoom(roomId); // 加入并监听
+                await joinRoom(roomId); 
                 
             } catch (error) {
                 console.error("Join Room Error:", error);
@@ -670,6 +672,10 @@
         async function joinRoom(roomId) {
             currentRoomId = roomId;
             
+            // (修复) 确保在重新订阅前清理旧的
+            if (gameUnsubscribe) gameUnsubscribe();
+            if (handUnsubscribe) handUnsubscribe();
+
             const roomRef = doc(db, paths.room(roomId));
             gameUnsubscribe = onSnapshot(roomRef, (docSnap) => {
                 if (!docSnap.exists()) {
@@ -697,15 +703,14 @@
                 }
             });
 
-            // (新) 根据游戏状态决定显示哪个屏幕
             const roomSnap = await getDoc(roomRef);
             if(roomSnap.exists()) {
                 const status = roomSnap.data().status;
                 if(status === "playing" || status === "finishing") {
                     showScreen('game-board');
                 } else if (status === "finished") {
-                    showScreen('game-board'); // 先显示棋盘
-                    renderGameState(roomSnap.data()); // 然后渲染结束模态框
+                    showScreen('game-board'); 
+                    renderGameState(roomSnap.data()); 
                 } else {
                     showScreen('waiting-room');
                 }
@@ -753,11 +758,8 @@
                         const newPlayers = roomData.players.filter(p => p.uid !== uid);
                         
                         if (newPlayers.length === 0 || roomData.status === "finished") {
-                            // 房间空了, 或游戏结束了, 删除房间
                             transaction.delete(roomRef);
-                            // (理想情况: 删除所有手牌, 但为简单起见, 暂时省略)
                         } else {
-                            // 游戏中途离开
                             let newHostId = roomData.hostId;
                             if (roomData.hostId === uid) {
                                 newHostId = newPlayers[0].uid;
@@ -784,7 +786,6 @@
         function renderGameState(roomData) {
             if (!roomData || !currentRoomId) return;
             
-            // 清理旧的 timeout
             if (hostFinishTimeout) {
                 clearTimeout(hostFinishTimeout);
                 hostFinishTimeout = null;
@@ -821,8 +822,7 @@
                 const numPlayers = roomData.players.length;
                 myPlayerIndex = roomData.players.findIndex(p => p.uid === userId);
                 if (myPlayerIndex === -1) {
-                    // 我是旁观者
-                    // (暂不处理, 假定所有人都玩)
+                    // 旁观
                 }
                 
                 const areas = [
@@ -861,7 +861,7 @@
                     const handEl = document.getElementById(area.handEl);
                     
                     areaEl.classList.remove('hidden'); 
-                    infoEl.textContent = `${player.name} (${player.cardCount} 张) | ${player.score} 分`; // (新) 显示积分
+                    infoEl.textContent = `${player.name} (${player.cardCount} 张) | ${player.score} 分`; 
                     
                     if (i === roomData.currentPlayerIndex) {
                         areaEl.classList.add('active');
@@ -869,19 +869,17 @@
                         areaEl.classList.remove('active');
                     }
                     
-                    // (修复) 堆叠对手的牌
                     if (relativeIndex !== 0) { 
                         handEl.innerHTML = '';
                         if (player.cardCount > 0) {
-                            handEl.appendChild(createCardElement(null, true)); // 只显示一张牌背
+                            handEl.appendChild(createCardElement(null, true)); 
                         }
                     }
                 }
                 
                 document.getElementById('draw-pile-count').textContent = `剩余: ${roomData.drawPile.length}`;
-                document.getElementById('base-bet-display').textContent = roomData.baseBet || 100; // (新)
+                document.getElementById('base-bet-display').textContent = roomData.baseBet || 100; 
                 
-                // (修复) 渲染 displayCards
                 const lastPlayArea = document.getElementById('last-play-area');
                 lastPlayArea.innerHTML = '';
                 const cardsToRender = (roomData.displayCards && roomData.displayCards.length > 0) ? roomData.displayCards : roomData.lastPlayedCards;
@@ -897,20 +895,18 @@
                 const isNewRound = roomData.isNewRound;
                 const isGameStart = (roomData.lastPlayerId === null); 
                 
-                // (新) 游戏结算中
                 if (roomData.status === "finishing") {
                     playButton.disabled = true;
                     passDrawButton.disabled = true;
                     const winnerName = roomData.players.find(p => p.uid === roomData.winner)?.name || "??";
                     showMessage(`${winnerName} 赢了! 5秒后结算...`, 4500);
 
-                    // (新) 只有房主触发结算
                     if (roomData.hostId === userId) {
                         hostFinishTimeout = setTimeout(() => {
                             calculateAndFinishGame(roomData);
-                        }, 5000); // 5秒延迟
+                        }, 5000); 
                     }
-                    return; // 结束渲染
+                    return; 
                 }
                 
                 
@@ -935,6 +931,14 @@
                     } else {
                         passDrawButton.textContent = '摸牌 / 过';
                     }
+                    
+                    // (修复 Bug 2) 强制摸牌后, 必须出牌, 不能"过"
+                    const isFreePlayAfterDraw = !isNewRound && roomData.currentPlay === null;
+                    if (isFreePlayAfterDraw && !isGameStart) {
+                        passDrawButton.disabled = true; 
+                        showMessage("你必须出牌 (新回合)", 1500);
+                    }
+
                 } else {
                     // 不是我的回合
                     playButton.disabled = true;
@@ -943,7 +947,6 @@
 
 
             } else if (roomData.status === "finished") {
-                // (新) 渲染积分
                 const scoreRecapEl = document.getElementById('score-recap');
                 scoreRecapEl.innerHTML = '';
                 roomData.players.forEach(p => {
@@ -960,7 +963,6 @@
                 document.getElementById('game-over-message').textContent = `${winnerName} 赢得了游戏 (第 ${roomData.gameNumber || 1} 局)!`;
                 gameOverModal.classList.remove('hidden');
                 
-                // (新) “下一局”按钮
                 const nextGameBtn = document.getElementById('next-game-btn');
                 if (roomData.hostId === userId) {
                     nextGameBtn.classList.remove('hidden');
@@ -969,11 +971,7 @@
                     nextGameBtn.classList.add('hidden');
                 }
                 
-                // 停止监听 (因为游戏已结束, 等待玩家操作)
-                if (gameUnsubscribe) gameUnsubscribe();
-                if (handUnsubscribe) handUnsubscribe();
-                gameUnsubscribe = null;
-                handUnsubscribe = null;
+                // (修复 Bug 1) 不再停止监听
             }
         }
         
@@ -1013,7 +1011,6 @@
             }
         }
 
-        // (修复) 增加对 isLaiziSub 的检查
         function createCardElement(card, isFaceDown = false) {
             const cardDiv = document.createElement('div');
             cardDiv.className = 'card';
@@ -1023,11 +1020,9 @@
             } else {
                 cardDiv.dataset.value = card.value;
                 
-                // (新) 检查是否是 "被代替的癞子"
                 if (card.isLaiziSub) {
                     cardDiv.classList.add('laizi');
                 } 
-                // (新) 检查是否是 "真·癞子"
                 else if (LAIZI_VALUES.includes(card.value)) {
                     cardDiv.classList.add('laizi');
                 }
@@ -1068,7 +1063,6 @@
             return array;
         }
 
-        // (新) “下一局”游戏
         async function startNextGame(roomData) {
             if (roomData.hostId !== userId) return;
             
@@ -1086,10 +1080,6 @@
             deck = shuffleArray(deck);
             
             const hands = [];
-            let smallestCardScore = 999;
-            let firstPlayerIndex = 0;
-            let smallestCard = null;
-            
             for (let i = 0; i < numPlayers; i++) hands.push([]);
             
             for (let i = 0; i < 5; i++) {
@@ -1101,17 +1091,35 @@
                 }
             }
             
-            hands.forEach((hand, playerIndex) => {
+            // (修复 规则 2) 查找花色最大的最小牌
+            let smallestValue = 99;
+            let largestSuitScore = -1;
+            let firstPlayerIndex = 0;
+            let smallestCard = null;
+
+            // Pass 1: Find the smallest card value in the game
+            hands.forEach((hand) => {
                 hand.forEach(card => {
-                    if (LAIZI_VALUES.includes(card.value)) return; 
-                    const score = card.value * 10 + SUIT_VALUES[card.suit];
-                    if (score < smallestCardScore) {
-                        smallestCardScore = score;
-                        firstPlayerIndex = playerIndex;
-                        smallestCard = card; 
+                    if (!LAIZI_VALUES.includes(card.value) && card.value < smallestValue) {
+                        smallestValue = card.value;
                     }
                 });
             });
+
+            // Pass 2: Find the player with the highest suit of that smallest card
+            hands.forEach((hand, playerIndex) => {
+                hand.forEach(card => {
+                    if (card.value === smallestValue) {
+                        const suitScore = SUIT_VALUES[card.suit];
+                        if (suitScore > largestSuitScore) {
+                            largestSuitScore = suitScore;
+                            firstPlayerIndex = playerIndex;
+                            smallestCard = card;
+                        }
+                    }
+                });
+            });
+            // (修复 规则 2 结束)
             
             try {
                 const batch = writeBatch(db);
@@ -1122,7 +1130,6 @@
                     batch.set(handRef, { cards: hands[i] });
                 }
                 
-                // (新) 重置牌数, 但保留积分
                 const updatedPlayers = players.map(p => ({ 
                     ...p, 
                     cardCount: 5 
@@ -1138,7 +1145,7 @@
                     smallestCard: smallestCard,
                     isNewRound: true,
                     lastPlayedCards: [],
-                    displayCards: [], // (新)
+                    displayCards: [], 
                     currentPlay: null,
                     log: arrayUnion(`第 ${ (roomData.gameNumber || 1) + 1 } 局游戏开始！`),
                     winner: null,
@@ -1149,7 +1156,7 @@
                 
                 await batch.commit();
                 
-                // (新) 手动重新订阅
+                // (修复 Bug 1) 重新订阅, 以防万一
                 joinRoom(currentRoomId);
                 
             } catch (error) {
@@ -1158,10 +1165,9 @@
             }
         }
         
-        // (新) 积分结算 (由房主在 5 秒延迟后触发)
         async function calculateAndFinishGame(roomData) {
             if (roomData.hostId !== userId || roomData.status !== "finishing") {
-                return; // 只有房主能结算
+                return; 
             }
             
             try {
@@ -1170,7 +1176,7 @@
                 
                 let totalGain = 0;
                 const newScores = {};
-                roomData.players.forEach(p => newScores[p.uid] = p.score); // 复制当前积分
+                roomData.players.forEach(p => newScores[p.uid] = p.score); 
 
                 roomData.players.forEach(p => {
                     if (p.uid !== winnerId) {
@@ -1195,7 +1201,6 @@
                 
             } catch (error) {
                 console.error("Calculate Score Error:", error);
-                // 尝试强行结束游戏
                 const roomRef = doc(db, paths.room(roomData.roomId));
                 await updateDoc(roomRef, { status: "finished" });
             }
@@ -1227,10 +1232,6 @@
             deck = shuffleArray(deck);
             
             const hands = [];
-            let smallestCardScore = 999;
-            let firstPlayerIndex = 0;
-            let smallestCard = null; // (新)
-            
             for (let i = 0; i < numPlayers; i++) hands.push([]);
             
             for (let i = 0; i < 5; i++) {
@@ -1242,17 +1243,35 @@
                 }
             }
             
-            hands.forEach((hand, playerIndex) => {
+            // (修复 规则 2) 查找花色最大的最小牌
+            let smallestValue = 99;
+            let largestSuitScore = -1;
+            let firstPlayerIndex = 0;
+            let smallestCard = null;
+
+            // Pass 1: Find the smallest card value in the game
+            hands.forEach((hand) => {
                 hand.forEach(card => {
-                    if (LAIZI_VALUES.includes(card.value)) return; 
-                    const score = card.value * 10 + SUIT_VALUES[card.suit];
-                    if (score < smallestCardScore) {
-                        smallestCardScore = score;
-                        firstPlayerIndex = playerIndex;
-                        smallestCard = card; // (新) 记录最小的牌
+                    if (!LAIZI_VALUES.includes(card.value) && card.value < smallestValue) {
+                        smallestValue = card.value;
                     }
                 });
             });
+
+            // Pass 2: Find the player with the highest suit of that smallest card
+            hands.forEach((hand, playerIndex) => {
+                hand.forEach(card => {
+                    if (card.value === smallestValue) {
+                        const suitScore = SUIT_VALUES[card.suit];
+                        if (suitScore > largestSuitScore) {
+                            largestSuitScore = suitScore;
+                            firstPlayerIndex = playerIndex;
+                            smallestCard = card;
+                        }
+                    }
+                });
+            });
+            // (修复 规则 2 结束)
             
             try {
                 const batch = writeBatch(db);
@@ -1271,16 +1290,16 @@
                     discardPile: [], 
                     players: updatedPlayers,
                     currentPlayerIndex: firstPlayerIndex, 
-                    smallestCardPlayerIndex: firstPlayerIndex, // (新)
-                    smallestCard: smallestCard, // (新)
+                    smallestCardPlayerIndex: firstPlayerIndex, 
+                    smallestCard: smallestCard, 
                     isNewRound: true,
                     lastPlayedCards: [],
-                    displayCards: [], // (新)
+                    displayCards: [], 
                     currentPlay: null,
                     log: arrayUnion(`游戏开始！${players[firstPlayerIndex].name} (有最小牌) 先出。`),
-                    bombCount: 0, // (新)
-                    baseBet: 100, // (新)
-                    gameNumber: 1, // (新)
+                    bombCount: 0, 
+                    baseBet: 100, 
+                    gameNumber: 1, 
                 });
                 
                 await batch.commit();
@@ -1298,7 +1317,7 @@
                 return;
             }
             if (!currentRoomId || !appId) return;
-            playButton.disabled = true; // 先禁用
+            playButton.disabled = true; 
 
             const selectedCards = selectedIndices.map(i => localHand[i]).sort((a, b) => a.value - b.value);
             const playedCardIds = selectedCards.map(c => (c.suit || '') + c.rank); 
@@ -1323,7 +1342,6 @@
                     const isGameStart = (roomData.lastPlayerId === null);
                     const isFreePlay = isGameStart || roomData.isNewRound;
 
-                    // (新) 检查第一回合是否出了最小牌
                     if (isGameStart && roomData.currentPlayerIndex === roomData.smallestCardPlayerIndex) {
                         const smallestCard = roomData.smallestCard;
                         const smallestCardId = (smallestCard.suit || '') + smallestCard.rank;
@@ -1358,7 +1376,6 @@
                         };
                     }
                     
-                    // (新) 获取用于显示的牌
                     const displayCards = getDisplayCards(selectedCards, finalPlayInfo);
                     
                     let idsToRemove = [...playedCardIds];
@@ -1382,11 +1399,10 @@
                     let newStatus = roomData.status;
                     let winner = null;
                     if (newHand.length === 0) {
-                        newStatus = "finishing"; // (新) 胜利延迟
+                        newStatus = "finishing"; 
                         winner = userId;
                     }
                     
-                    // (新) 检查炸弹, 更新底分
                     let newBombCount = roomData.bombCount || 0;
                     let newBaseBet = roomData.baseBet || 100;
                     if (playInfo.type === PLAY_TYPE.BOMB || playInfo.type === PLAY_TYPE.ROCKET) {
@@ -1402,7 +1418,7 @@
                     
                     transaction.update(roomRef, {
                         lastPlayedCards: selectedCards,
-                        displayCards: displayCards, // (新)
+                        displayCards: displayCards, 
                         discardPile: arrayUnion(...selectedCards), 
                         currentPlay: finalPlayInfo, 
                         lastPlayerId: userId, 
@@ -1411,8 +1427,8 @@
                         players: updatedPlayers,
                         status: newStatus,
                         winner: winner,
-                        bombCount: newBombCount, // (新)
-                        baseBet: newBaseBet, // (新)
+                        bombCount: newBombCount, 
+                        baseBet: newBaseBet, 
                         log: arrayUnion(`${roomData.players[myPlayerIndex].name} 出牌了。`)
                     });
                 });
@@ -1422,7 +1438,7 @@
             } catch (error) {
                 console.error("Play Card Error:", error);
                 showMessage(error.message);
-                playButton.disabled = false; // (修复) 出牌失败时, 重新启用按钮
+                playButton.disabled = false; 
             }
         };
         
@@ -1515,16 +1531,14 @@
         
         // --- 9. 牌型验证 (含所有癞子) ---
         
-        // (新) 辅助函数：获取一张"假"牌用于显示
         function getCardFromValue(value) {
             if (value === LAIZI_2_VALUE) return { suit: '♠', rank: '2', value: 15 };
             if (value === SMALL_JOKER_VALUE) return { suit: 'Joker', rank: 'Small', value: 16 };
             if (value === BIG_JOKER_VALUE) return { suit: 'Joker', rank: 'Big', value: 17 };
             const rank = RANKS.find(r => RANK_VALUES[r] === value);
-            return { suit: '♦', rank: rank, value: value }; // 默认使用方片
+            return { suit: '♦', rank: rank, value: value }; 
         }
         
-        // (新) 辅助函数：获取用于显示的牌 (处理癞子)
         function getDisplayCards(playedCards, playInfo) {
             if (playInfo.type === PLAY_TYPE.INVALID) return playedCards;
             if (playInfo.type === PLAY_TYPE.ROCKET) return playedCards;
@@ -1534,7 +1548,7 @@
                     const fakeCard = getCardFromValue(playInfo.value);
                     return [{ ...fakeCard, isLaiziSub: true }];
                 }
-                return playedCards; // 正常单张
+                return playedCards; 
             }
 
             const regulars = playedCards.filter(c => !LAIZI_VALUES.includes(c.value));
@@ -1564,6 +1578,24 @@
                         }
                     }
                     return display;
+                
+                // (新) 连对
+                case PLAY_TYPE.CONSECUTIVE_PAIRS:
+                    const startValPairs = playInfo.value;
+                    for (let i = 0; i < playInfo.length / 2; i++) {
+                        const val = startValPairs + i;
+                        const regCards = regulars.filter(c => c.value === val);
+                        if (regCards.length === 2) {
+                            display.push(...regCards);
+                        } else if (regCards.length === 1) {
+                            display.push(regCards[0]);
+                            display.push({ ...getCardFromValue(val), isLaiziSub: true });
+                        } else {
+                            display.push({ ...getCardFromValue(val), isLaiziSub: true });
+                            display.push({ ...getCardFromValue(val), isLaiziSub: true });
+                        }
+                    }
+                    return display;
 
                 case PLAY_TYPE.FULL_HOUSE:
                     const trioVal = playInfo.value;
@@ -1581,14 +1613,13 @@
                         display.push(regularsPairCards[0]);
                         display.push({ ...getCardFromValue(regularsPairCards[0].value), isLaiziSub: true });
                     } else { 
-                        // 纯癞子对, 随便选个值 (比如 3)
                         const pairVal = (regulars.length > 0 && regulars[0].value !== trioVal) ? regulars[0].value : (trioVal === 3 ? 4 : 3);
                         display.push({ ...getCardFromValue(pairVal), isLaiziSub: true });
                         display.push({ ...getCardFromValue(pairVal), isLaiziSub: true });
                     }
                     return display;
             }
-            return playedCards; // Fallback
+            return playedCards; 
         }
 
 
@@ -1618,8 +1649,13 @@
                 if (fullHouse) return { type: PLAY_TYPE.FULL_HOUSE, value: fullHouse.value, cards: sortedCards, length: 5 };
             }
             
+            // (新) 连对
+            if (len >= 4 && len % 2 === 0) {
+                const consPairs = findConsecutivePairs(regulars, laiziCount, len);
+                if (consPairs) return { type: PLAY_TYPE.CONSECUTIVE_PAIRS, value: consPairs.value, cards: sortedCards, length: len };
+            }
+
             if (len >= 3) {
-                // (修复) 传入 regulars, 而不是 sortedCards
                 const straight = findStraight(regulars, laiziCount, len);
                 if (straight) return { type: PLAY_TYPE.STRAIGHT, value: straight.value, cards: sortedCards, length: len };
             }
@@ -1692,10 +1728,9 @@
             return null;
         }
         
-        // (修复) 查找最低起始顺子
         function findStraight(regulars, laiziCount, totalLength) {
             if (regulars.length === 0 && laiziCount >= totalLength) {
-                 return { value: 3 }; // 纯癞子顺子
+                 return { value: 3 }; 
             }
             
             const uniqueValues = [...new Set(regulars.map(c => c.value))];
@@ -1703,13 +1738,10 @@
             
             if (uniqueValues.some(v => v >= LAIZI_2_VALUE)) return null; 
             
-            const minReg = uniqueValues[0];
-            const maxReg = uniqueValues[uniqueValues.length - 1];
+            const minReg = uniqueValues.length > 0 ? uniqueValues[0] : LAIZI_2_VALUE;
             
-            if (maxReg - minReg >= totalLength) return null; 
-
-            const minPossibleStart = Math.max(3, minReg - laiziCount);
             const maxPossibleStart = minReg;
+            const minPossibleStart = Math.max(3, minReg - laiziCount); 
 
             for (let startVal = minPossibleStart; startVal <= maxPossibleStart; startVal++) {
                 const endVal = startVal + totalLength - 1;
@@ -1730,6 +1762,45 @@
             return null; 
         }
         
+        // (新) 连对
+        function findConsecutivePairs(regulars, laiziCount, totalLength) {
+            const numPairs = totalLength / 2;
+            if (numPairs < 2) return null;
+            if (regulars.length === 0 && laiziCount >= totalLength) return { value: 3 }; 
+
+            const valueCounts = {};
+            regulars.forEach(c => { valueCounts[c.value] = (valueCounts[c.value] || 0) + 1; });
+            const regValues = regulars.map(c => c.value);
+            
+            if (regValues.some(v => v >= LAIZI_2_VALUE)) return null; 
+            
+            const uniqueValues = [...new Set(regValues)];
+            uniqueValues.sort((a, b) => a - b);
+            const minReg = uniqueValues.length > 0 ? uniqueValues[0] : LAIZI_2_VALUE;
+
+            const maxPossibleStart = minReg;
+            // 至少需要 (numPairs * 2) - laiziCount 张常规牌
+            // 假设最少常规牌: (3), laizi: (2,2,2) -> 3344. minReg=3. laizi=3. totalLength=4. numPairs=2
+            // 
+            const minPossibleStart = Math.max(3, minReg - laiziCount); // 用一个简化的估算
+
+            for (let startVal = minPossibleStart; startVal <= maxPossibleStart; startVal++) {
+                const endVal = startVal + numPairs - 1;
+                if (endVal >= LAIZI_2_VALUE) continue; 
+
+                let needed = 0;
+                for (let v = startVal; v <= endVal; v++) {
+                    const countInRegs = valueCounts[v] || 0;
+                    needed += Math.max(0, 2 - countInRegs);
+                }
+                
+                if (needed <= laiziCount) {
+                    return { value: startVal }; 
+                }
+            }
+            return null; 
+        }
+
         function findTrio(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 3) return null;
             if (regulars.length === 0) return { value: 3 }; 
@@ -1779,6 +1850,14 @@
             {
                 return true;
             }
+
+            // (新) 连对
+            if (playInfo.type === PLAY_TYPE.CONSECUTIVE_PAIRS) {
+                if (lastPlay.type !== PLAY_TYPE.CONSECUTIVE_PAIRS) return false;
+                if (playInfo.length !== lastPlay.length) return false;
+                return playInfo.value === lastPlay.value + 1;
+            }
+            if (lastPlay.type === PLAY_TYPE.CONSECUTIVE_PAIRS) return false; // 只有连对能压连对
 
             if (playInfo.type !== lastPlay.type) return false;
             if (playInfo.type === PLAY_TYPE.STRAIGHT && playInfo.length !== lastPlay.length) return false;
