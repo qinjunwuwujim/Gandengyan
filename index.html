@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>干瞪眼 (四人在线版 v2)</title>
+    <title>干瞪眼 (在线版)</title>
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -292,7 +292,7 @@
             <div class="flex flex-col gap-4">
                 <button id="create-room-btn" class="btn btn-green" disabled>创建房间</button>
                 <hr>
-                <input id="room-id-input" type="text" placeholder="输入房间 ID" class="p-2 border rounded text-center">
+                <input id="room-id-input" type="text" placeholder="输入房间 ID 或邀请链接" class="p-2 border rounded text-center">
                 <button id="join-room-btn" class="btn btn-blue" disabled>加入房间</button>
             </div>
         </div>
@@ -302,7 +302,6 @@
     <div id="waiting-room-screen" class="overlay hidden">
         <div class="modal">
             <h2 class="text-xl font-bold mb-4">等待室</h2>
-            <!-- (修复) 修改提示文本 -->
             <p id="waiting-room-prompt" class="mb-2">分享这个【邀请链接】给你的朋友:</p>
             <input id="room-id-display" type="text" readonly class="p-2 border rounded text-center w-full font-bold text-sm mb-4" onclick="this.select()">
             
@@ -332,7 +331,7 @@
     <script type="module">
         // 导入 Firebase 模块
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, runTransaction, writeBatch, arrayUnion, arrayRemove, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- 全局变量 ---
@@ -371,18 +370,19 @@
         
         async function initFirebase() {
             try {
-                const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-                if (firebaseConfigStr === '{}') {
-                     throw new Error("Firebase config is missing (__firebase_config is undefined).");
-                }
+                // (修复) 直接使用你提供的 firebaseConfig
+                const firebaseConfig = {
+                  apiKey: "AIzaSyCmSAI_ojtg7mEWQJ_hfZBWMTxy0nHh1nk",
+                  authDomain: "gandengyan-32d4a.firebaseapp.com",
+                  projectId: "gandengyan-32d4a",
+                  storageBucket: "gandengyan-32d4a.firebasestorage.app",
+                  messagingSenderId: "1088497241628",
+                  appId: "1:1088497241628:web:f957fa04eb4152b26c59d9",
+                  measurementId: "G-NNRVFGYEGZ"
+                };
                 
-                const firebaseConfig = JSON.parse(firebaseConfigStr);
-
-                if (!firebaseConfig.apiKey) {
-                    throw new Error("Firebase config is missing apiKey.");
-                }
+                // (修复) appId 现在是你的 projectId，确保数据库路径一致
+                appId = firebaseConfig.projectId; 
 
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -391,14 +391,10 @@
                 // 1. 设置监听器
                 onAuthStateChanged(auth, async (user) => {
                     if (!user) {
-                        // 未登录, 尝试登录
+                        // 未登录, 尝试登录 (只使用匿名登录)
                         loadingStatus.textContent = "正在登录...";
                         try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                            await signInAnonymously(auth);
                         } catch (authError) {
                             console.error("Auth Error:", authError);
                             throw new Error(`身份验证失败: ${authError.message}`);
@@ -406,13 +402,12 @@
                         return;
                     }
                     
-                    // (修复) 登录成功后
                     userId = user.uid;
                     document.getElementById('user-id-display').textContent = userId;
                     createRoomBtn.disabled = false;
                     joinRoomBtn.disabled = false;
 
-                    // (修复) 检查 URL 是否包含 room=...
+                    // 检查 URL 是否包含 room=...
                     const params = new URLSearchParams(window.location.search);
                     const roomIdFromUrl = params.get('room');
 
@@ -420,8 +415,6 @@
                         // 自动加入
                         showMessage(`正在自动加入房间 ${roomIdFromUrl}...`);
                         document.getElementById('room-id-input').value = roomIdFromUrl;
-                        
-                        // 模拟点击 "加入房间" 按钮的逻辑
                         await autoJoinRoom(roomIdFromUrl);
                     } else {
                         // 正常显示大厅
@@ -435,7 +428,21 @@
             }
         }
         
-        // (修复) 新增: 自动加入的函数
+        function getRoomIdFromInput(input) {
+            let roomId = input.trim().toUpperCase();
+            try {
+                // 检查是否是完整的 URL
+                const url = new URL(input);
+                const roomParam = url.searchParams.get('room');
+                if (roomParam) {
+                    roomId = roomParam.toUpperCase();
+                }
+            } catch (e) {
+                // 不是 URL，就假定它是房间 ID
+            }
+            return roomId;
+        }
+
         async function autoJoinRoom(roomId) {
             joinRoomBtn.disabled = true; // 禁用按钮
             
@@ -509,6 +516,7 @@
 
         // --- 3. 路径助手 ---
         const paths = {
+            // (修复) 路径现在使用你固定的 appId (projectId)
             room: (roomId) => `/artifacts/${appId}/public/data/gandengyan-rooms/${roomId}`,
             hand: (roomId, uid) => `/artifacts/${appId}/public/data/gandengyan-hands/${roomId}-${uid}`
         };
@@ -550,9 +558,11 @@
         };
 
         joinRoomBtn.onclick = async () => {
-            const roomId = document.getElementById('room-id-input').value.toUpperCase();
+            const inputVal = document.getElementById('room-id-input').value;
+            const roomId = getRoomIdFromInput(inputVal); // 使用新函数解析
+            
             if (!roomId) {
-                 showMessage("请输入房间 ID");
+                 showMessage("请输入有效的房间 ID 或邀请链接");
                  return;
             }
             
@@ -629,7 +639,7 @@
 
             showScreen('waiting-room');
             
-            // (修复) 显示完整的邀请链接
+            // 显示完整的邀请链接
             const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
             document.getElementById('room-id-display').value = inviteLink;
             document.getElementById('waiting-room-prompt').textContent = "分享这个【邀请链接】给你的朋友:";
@@ -691,7 +701,7 @@
             }
             
             showScreen('lobby');
-            // (修复) 清理 URL, 避免下次刷新自动加入
+            // 清理 URL, 避免下次刷新自动加入
             window.history.pushState({}, '', window.location.pathname);
         }
 
@@ -702,7 +712,6 @@
 
             if (roomData.status === "waiting") {
                 showScreen('waiting-room');
-                // (修复) 更新邀请链接, 保持同步 (虽然一般不会变)
                 const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomData.roomId}`;
                 document.getElementById('room-id-display').value = inviteLink;
                 
@@ -724,8 +733,9 @@
                 }
                 
             } else if (roomData.status === "playing") {
-                // (修复) 游戏开始, 清理 URL
-                window.history.pushState({}, '', window.location.pathname);
+                if (window.location.search.includes('room=')) {
+                    window.history.pushState({}, '', window.location.pathname);
+                }
                 showScreen('game-board');
                 
                 const numPlayers = roomData.players.length;
@@ -1109,17 +1119,21 @@
                     if (totalCount === 4) return { type: PLAY_TYPE.BOMB, value: firstVal, cards: sortedCards, length: 4 };
                 }
             } else if (jokerCount > 0) {
+                // 纯癞子
                 if (jokerCount === 1) return { type: PLAY_TYPE.SINGLE, value: JOKER_VALUE, cards: sortedCards, length: 1 };
                 if (jokerCount === 2) return { type: PLAY_TYPE.PAIR, value: JOKER_VALUE, cards: sortedCards, length: 2 };
                 if (jokerCount === 3) return { type: PLAY_TYPE.TRIO, value: JOKER_VALUE, cards: sortedCards, length: 3 };
                 if (jokerCount === 4) return { type: PLAY_TYPE.BOMB, value: JOKER_VALUE, cards: sortedCards, length: 4 };
             }
 
+            // 顺子 (含癞子)
             if (len >= 3) {
                 let regValues = regulars.map(c => c.value);
                 let regUniqueValues = [...new Set(regValues)];
                 
+                // 纯癞子顺子
                 if (regUniqueValues.length === 0 && jokerCount >= 3) {
+                    // 默认从 3 开始
                     return { type: PLAY_TYPE.STRAIGHT, value: 3 + len - 1, cards: sortedCards, length: len };
                 }
                 
@@ -1128,6 +1142,7 @@
                 }
 
                 const minVal = regUniqueValues[0];
+                // 2 不能参与顺子
                 if (minVal + len - 1 >= JOKER_VALUE) {
                      if (regUniqueValues[regUniqueValues.length - 1] > 14) {
                          return { type: PLAY_TYPE.INVALID };
@@ -1140,8 +1155,9 @@
                 let regIndex = 0;
                 
                 for(let i=0; i < straightLen; i++) {
+                    // 顺子不能包含 '2'
                     if (currentVal >= JOKER_VALUE) {
-                        neededJokers = 99;
+                        neededJokers = 99; // 标记为无效
                         break;
                     }
                     
@@ -1158,6 +1174,7 @@
                 }
             }
 
+            // 三带二 (Full House, 暂不支持癞子)
             if (len === 5 && jokerCount === 0) {
                 const values = sortedCards.map(c => c.value);
                 const isFullHouse1 = (values[0] === values[1] && values[0] === values[2] && values[3] === values[4]); // 3+2
@@ -1174,21 +1191,27 @@
         function isValidPlay(playInfo, lastPlay, isNewRound) {
             if (playInfo.type === PLAY_TYPE.INVALID) return false;
             
+            // 自由出牌
             if (isNewRound) return true;
 
+            // 炸弹逻辑
             if (playInfo.type === PLAY_TYPE.BOMB) {
                 if (lastPlay.type === PLAY_TYPE.BOMB) {
                     return playInfo.value > lastPlay.value;
                 }
-                return true;
+                return true; // 炸弹可以压任何非炸弹
             }
+            
+            // 如果上一个是炸弹，你必须出更大的炸弹
             if (lastPlay.type === PLAY_TYPE.BOMB) {
                 return false;
             }
 
+            // 跟牌：牌型和长度必须一致
             if (playInfo.type !== lastPlay.type) return false;
             if (playInfo.length !== lastPlay.length) return false;
             
+            // 比大小
             return playInfo.value > lastPlay.value;
         }
 
