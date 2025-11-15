@@ -472,6 +472,12 @@
             <p id="waiting-room-prompt" class="mb-2">分享这个【邀请链接】给你的朋友:</p>
             <input id="room-id-display" type="text" readonly class="p-2 border rounded text-center w-full font-bold text-sm mb-4" onclick="this.select()">
             
+            <!-- (新) 修改昵称 -->
+            <div class="flex gap-2 mb-4">
+                <input id="change-name-input" type="text" placeholder="输入你的昵称" class="config-input">
+                <button id="change-name-btn" class="btn btn-blue">修改</button>
+            </div>
+            
             <h3 class="font-bold mb-2">已加入的玩家 (<span id="player-count">1</span>/4):</h3>
             <ul id="player-list" class="list-disc list-inside mb-4 text-left">
                 <!-- 玩家列表 -->
@@ -548,6 +554,8 @@
         const laiziChoiceModal = document.getElementById('laizi-choice-modal');
         const laiziChoiceButtons = document.getElementById('laizi-choice-buttons');
         const effectOverlay = document.getElementById('effect-overlay');
+        const changeNameInput = document.getElementById('change-name-input');
+        const changeNameBtn = document.getElementById('change-name-btn');
 
         // --- 牌型定义 ---
         const SUITS = ['♦', '♣', '♥', '♠']; // 方片(小) -> 黑桃(大)
@@ -652,9 +660,11 @@
                     }
                     
                     const roomData = roomSnap.data();
-                    if (roomData.status !== "waiting") {
-                        if(roomData.status === "finished") {
-                           // 允许加入
+                    
+                    // (新) 允许重新加入
+                    if (roomData.status !== "waiting" && roomData.status !== "finished") {
+                        if(roomData.players.some(p => p.uid === userId)) {
+                           // 允许重新加入
                         } else {
                            throw new Error("游戏已开始 (来自链接)");
                         }
@@ -766,8 +776,8 @@
                 currentPlay: null,
                 currentPlayerIndex: 0,
                 isNewRound: true,
-                passMask: 0, // (新) pass 位掩码
-                drawMask: 0, // (新) draw 位掩码
+                passMask: 0, 
+                drawMask: 0, 
                 log: [`房间 ${roomId} 已创建。`],
                 winner: null,
                 gameNumber: 1, 
@@ -814,8 +824,14 @@
                     }
                     
                     const roomData = roomSnap.data();
+                    
+                    // (新) 允许重新加入
                     if (roomData.status !== "waiting" && roomData.status !== "finished") {
-                        throw new Error("游戏已开始或已结束");
+                        if(roomData.players.some(p => p.uid === userId)) {
+                           // 允许重新加入
+                        } else {
+                           throw new Error("游戏已开始或已结束");
+                        }
                     }
                     
                     if (roomData.players.length >= 4 && !roomData.players.some(p => p.uid === userId)) {
@@ -865,15 +881,21 @@
                 
                 const oldStatus = currentRoomData ? currentRoomData.status : null;
                 const oldBombCount = currentRoomData ? currentRoomData.bombCount : 0;
+                const oldWinner = currentRoomData ? currentRoomData.winner : null;
+                
                 currentRoomData = docSnap.data(); 
                 
-                // (新) 触发特效
                 if ((oldStatus === "playing" || oldStatus === "drawing") && currentRoomData.bombCount > oldBombCount) {
                     if(currentRoomData.currentPlay && currentRoomData.currentPlay.type === PLAY_TYPE.ROCKET) {
                          showEffect("王炸!! 🚀");
                     } else {
                          showEffect("BOMB!! 💣");
                     }
+                }
+                
+                // (新) 春天特效
+                if (oldWinner === null && currentRoomData.winner !== null && currentRoomData.isSpring === true) {
+                    showEffect("春天!! 🌸");
                 }
                 
                 renderGameState(currentRoomData);
@@ -896,14 +918,20 @@
 
             const roomSnap = await getDoc(roomRef);
             if(roomSnap.exists()) {
-                const status = roomSnap.data().status;
+                const roomData = roomSnap.data();
+                const status = roomData.status;
                 if(status === "playing" || status === "finishing" || status === "drawing") {
                     showScreen('game-board');
                 } else if (status === "finished") {
                     showScreen('game-board'); 
-                    renderGameState(roomSnap.data()); 
+                    renderGameState(roomData); 
                 } else {
                     showScreen('waiting-room');
+                    // (新) 更新昵称输入框
+                    const myPlayer = roomData.players.find(p => p.uid === userId);
+                    if (myPlayer) {
+                        changeNameInput.value = myPlayer.name;
+                    }
                 }
             } else {
                  showScreen('lobby');
@@ -913,6 +941,45 @@
         document.getElementById('leave-room-btn').onclick = () => leaveRoom(true);
         document.getElementById('ingame-leave-btn').onclick = () => leaveRoom(true);
         document.getElementById('back-to-lobby-btn').onclick = () => leaveRoom(false); 
+        
+        // (新) 修改昵称
+        changeNameBtn.onclick = async () => {
+            const newName = changeNameInput.value.trim();
+            if (!newName || newName.length < 1 || newName.length > 20) {
+                showMessage("昵称必须在 1-20 个字符之间");
+                return;
+            }
+            if (!currentRoomId || !userId) return;
+            
+            changeNameBtn.disabled = true;
+            const roomRef = doc(db, paths.room(currentRoomId));
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(roomRef);
+                    if (!roomSnap.exists()) return;
+                    
+                    const roomData = roomSnap.data();
+                    const playerIndex = roomData.players.findIndex(p => p.uid === userId);
+                    if (playerIndex === -1) return;
+                    
+                    const oldName = roomData.players[playerIndex].name;
+                    const newPlayers = [...roomData.players];
+                    newPlayers[playerIndex].name = newName;
+                    
+                    transaction.update(roomRef, {
+                        players: newPlayers,
+                        log: arrayUnion(`${oldName} 修改昵称为 ${newName}`)
+                    });
+                });
+                showMessage("昵称修改成功！");
+            } catch (error) {
+                 console.error("Change Name Error:", error);
+                 showMessage("修改失败: " + error.message);
+            } finally {
+                changeNameBtn.disabled = false;
+            }
+        };
 
         async function leaveRoom(updateDB) {
             if (gameUnsubscribe) {
@@ -1413,7 +1480,7 @@
                 const springMultiplier = isSpring ? 2 : 1;
                 const finalBet = baseBet * bombMultiplier * springMultiplier;
                 
-                if (isSpring) {
+                if (isSpring && roomData.isSpring !== true) { // 确保只触发一次
                     showEffect("春天!! 🌸");
                 }
 
@@ -1440,7 +1507,8 @@
                 await updateDoc(roomRef, { 
                     status: "finished", 
                     players: updatedPlayers,
-                    oldPlayers: roomData.players 
+                    oldPlayers: roomData.players,
+                    isSpring: isSpring // (新) 记录春天
                 });
                 
             } catch (error) {
@@ -1876,7 +1944,7 @@
                     transaction.set(handRef, { cards: newHand });
                     
                     const updatedPlayers = [...roomData.players];
-                    // (修复) 必须更新当前玩家的牌数
+                    // (BUG修复) 必须更新当前玩家的牌数, 而不是 "我" 的牌数
                     updatedPlayers[roomData.currentPlayerIndex].cardCount = newHand.length;
                     
                     // (修复) 使用 currentPlayerIndex 来设置 bit
@@ -1884,7 +1952,7 @@
                     const newDrawMask = (roomData.drawMask || 0) | currentPlayerBit;
                     const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
                     
-                    // (修复) 必须显示当前玩家的日志
+                    // (BUG修复) 必须显示当前玩家的日志, 而不是 "我" 的日志
                     logMsg = `${roomData.players[roomData.currentPlayerIndex].name} 摸了一张牌 ${logMsg}。`;
                     
                     // (新) 检查是否所有人都摸完了
@@ -1933,6 +2001,7 @@
         // --- 9. 牌型验证 (含所有癞子) ---
         
         function getCardFromValue(value) {
+            // (修复) '2' 也需要花色, 但这里是替身, 默认给 ♠
             if (value === LAIZI_2_VALUE) return { suit: '♠', rank: '2', value: 15 };
             if (value === SMALL_JOKER_VALUE) return { suit: 'Joker', rank: 'Small', value: 16 };
             if (value === BIG_JOKER_VALUE) return { suit: 'Joker', rank: 'Big', value: 17 };
@@ -2124,7 +2193,10 @@
         
         function findBomb(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 4) return null;
-            if (regulars.length === 0) return { value: 3 }; 
+            if (regulars.length === 0) {
+                // (修复) 4 癞子, 默认当 3333
+                return { value: 3 }; 
+            }
 
             const valueCounts = {};
             regulars.forEach(c => { valueCounts[c.value] = (valueCounts[c.value] || 0) + 1; });
@@ -2135,16 +2207,15 @@
                 }
             }
             
-            if (regulars.length === 0) {
-                 return { value: 3 }; // (新) 4 癞子, 默认当 3333
-            }
-            
             return null; 
         }
 
         function findFullHouse(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 5) return null;
-            if (regulars.length <= 1) return { value: 3 }; 
+            if (regulars.length <= 1) {
+                // (修复) 5 癞子 (或 4 癞子+1常规), 默认当 33344
+                return { value: 3 }; 
+            }
 
             const valueCounts = {};
             regulars.forEach(c => { valueCounts[c.value] = (valueCounts[c.value] || 0) + 1; });
@@ -2267,7 +2338,12 @@
 
         function findTrio(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 3) return null;
-            if (regulars.length === 0) return { value: 3 }; 
+            if (regulars.length === 0) {
+                // (修复) 3 癞子, 默认当 333, 或癞子对
+                const laiziValues = [...new Set(laizi.map(l => l.value))];
+                if (laiziValues.length === 1) return { value: laiziValues[0] };
+                return { value: 3 };
+            }
             
             const firstVal = regulars[0].value;
             if (regulars.every(c => c.value === firstVal)) {
@@ -2278,7 +2354,11 @@
 
         function findPair(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 2) return null;
-            if (regulars.length === 0) return { value: 3 }; 
+            if (regulars.length === 0) {
+                // (修复) 2 癞子, 可能是 22, 小王小王, 大王大王, 或 33
+                if (laizi[0].value === laizi[1].value) return { value: laizi[0].value };
+                return { value: 3 }; 
+            }
             
             const firstVal = regulars[0].value;
             if (regulars.every(c => c.value === firstVal)) {
@@ -2322,7 +2402,7 @@
             if (playInfo.type === PLAY_TYPE.CONSECUTIVE_PAIRS) {
                 if (lastPlay.type !== PLAY_TYPE.CONSECUTIVE_PAIRS) return false;
                 if (playInfo.length !== lastPlay.length) return false;
-                if (lastPlay.value === 14 && playInfo.value === 15) return false; // (新) 连对不能到2
+                if (lastPlay.value === 14) return false; // (新) 连对不能到A或2
                 return playInfo.value === lastPlay.value + 1;
             }
             if (lastPlay.type === PLAY_TYPE.CONSECUTIVE_PAIRS) return false; 
