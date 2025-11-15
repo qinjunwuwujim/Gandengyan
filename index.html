@@ -18,6 +18,31 @@
         /* 隐藏滚动条 */
         ::-webkit-scrollbar { display: none; }
 
+        /* (新) 特效 */
+        #effect-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            pointer-events: none;
+            opacity: 0;
+            font-size: 8rem;
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 0 10px #FCD34D, 0 0 20px #FCD34D, 0 0 30px #EF4444, 0 0 40px #EF4444;
+            animation: effect-fade-in-out 2s ease-in-out forwards;
+        }
+
+        @keyframes effect-fade-in-out {
+            0% { opacity: 0; transform: scale(0.5); }
+            25% { opacity: 1; transform: scale(1.2); }
+            75% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.5); }
+        }
+
+
         /* 游戏界面 */
         #game-board {
             display: grid;
@@ -52,6 +77,11 @@
         .player-area.active {
             border-color: #FCD34D; /* yellow-300 */
             box-shadow: 0 0 15px rgba(252, 211, 77, 0.3);
+        }
+        
+        .player-area.drawing {
+            border-color: #3B82F6; /* blue-500 */
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
         }
 
         .player-info {
@@ -146,6 +176,7 @@
             width: 40px;
             height: 40px;
         }
+        /* (新) Joker 文字样式 */
         .joker-text {
             position: absolute;
             font-size: 10px;
@@ -153,14 +184,27 @@
             writing-mode: vertical-rl;
             text-orientation: mixed;
             z-index: 2;
+            line-height: 1;
         }
-        .joker-text-left { left: 5px; top: 25px; }
-        .joker-text-right { right: 5px; top: 25px; transform: rotate(180deg); }
+        .joker-text-left { left: 5px; top: 5px; }
+        .joker-text-right { right: 5px; bottom: 5px; transform: rotate(180deg); }
         
         .card[data-value="17"] { color: #EF4444; } 
         .card[data-value="17"] .joker-text { color: #EF4444; }
         .card[data-value="16"] { color: #1F2937; } 
         .card[data-value="16"] .joker-text { color: #1F2937; }
+        
+        /* (新) Pass 卡片 */
+        .card.pass-card {
+            background-color: #6B7280;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            border: 2px solid #FCD34D;
+        }
 
 
         /* 玩家自己的手牌 */
@@ -172,7 +216,7 @@
             border: 3px solid #3B82F6; 
         }
         
-        /* 桌面中央 (新) */
+        /* (新) 桌面中央 */
         #table-area {
             position: relative; 
             display: grid;
@@ -210,7 +254,7 @@
             text-align: center;
         }
         
-        /* (新) 玩家出牌区 */
+        /* 玩家出牌区 */
         .last-play-area {
             display: flex;
             flex-wrap: wrap;
@@ -300,6 +344,8 @@
         .btn-blue:hover { background-color: #2563EB; }
         .btn-red { background-color: #EF4444; color: white; }
         .btn-red:hover { background-color: #DC2626; }
+        .btn-gray { background-color: #6B7280; color: white; }
+        .btn-gray:hover { background-color: #4B5563; }
         
         /* 消息提示 */
         #message-area {
@@ -332,6 +378,9 @@
 </head>
 <body class="text-white">
 
+    <!-- (新) 特效层 -->
+    <div id="effect-overlay" style="opacity: 0;"></div>
+
     <!-- 游戏主界面 (默认隐藏) -->
     <div id="game-board" class="hidden">
         
@@ -340,16 +389,13 @@
         <div id="player-area-top" class="player-area hidden">
             <div id="player-info-top" class="player-info">玩家 2 (0 张)</div>
             <div id="player-hand-top" class="hand-container"></div>
-            <!-- (旧) 出牌区已移走 -->
         </div>
         
         <div id="player-area-left" class="player-area hidden">
             <div id="player-info-left" class="player-info">玩家 1 (0 张)</div>
             <div id="player-hand-left" class="hand-container"></div>
-            <!-- (旧) 出牌区已移走 -->
         </div>
 
-        <!-- (新) table-area 现在包含所有出牌区和牌堆 -->
         <div id="table-area">
             <div id="bet-info">底分: <span id="base-bet-display">100</span></div>
             
@@ -358,7 +404,6 @@
                 <div id="draw-pile-count" class="deck-count">剩余: 0</div>
             </div>
             
-            <!-- (新) 4个出牌区 -->
             <div id="last-play-area-top" class="last-play-area"></div>
             <div id="last-play-area-bottom" class="last-play-area"></div>
             <div id="last-play-area-left" class="last-play-area"></div>
@@ -368,15 +413,15 @@
         <div id="player-area-right" class="player-area hidden">
             <div id="player-info-right" class="player-info">玩家 3 (0 张)</div>
             <div id="player-hand-right" class="hand-container"></div>
-            <!-- (旧) 出牌区已移走 -->
         </div>
         
         <div id="player-area-bottom" class="player-area">
             <div id="player-info-bottom" class="player-info">你 (0 张)</div>
-            <!-- (旧) 出牌区已移走 -->
             <div class="absolute bottom-2 right-2 flex gap-2 z-10">
                 <button id="play-button" class="btn btn-green">出牌</button>
-                <button id="pass-draw-button" class="btn btn-blue">摸牌 / 过</button>
+                <!-- (新) 按钮分离 -->
+                <button id="pass-button" class="btn btn-gray">过</button>
+                <button id="draw-button" class="btn btn-blue hidden">摸牌</button> 
             </div>
             <div id="player-hand-area">
                 <div id="player-hand" class="hand-container">
@@ -496,11 +541,13 @@
         const createRoomBtn = document.getElementById('create-room-btn');
         const joinRoomBtn = document.getElementById('join-room-btn');
         const playButton = document.getElementById('play-button');
-        const passDrawButton = document.getElementById('pass-draw-button');
+        const passButton = document.getElementById('pass-button');
+        const drawButton = document.getElementById('draw-button');
         const initialScoreInput = document.getElementById('initial-score-input');
         const baseBetInput = document.getElementById('base-bet-input');
         const laiziChoiceModal = document.getElementById('laizi-choice-modal');
         const laiziChoiceButtons = document.getElementById('laizi-choice-buttons');
+        const effectOverlay = document.getElementById('effect-overlay');
 
         // --- 牌型定义 ---
         const SUITS = ['♦', '♣', '♥', '♠']; // 方片(小) -> 黑桃(大)
@@ -673,6 +720,14 @@
             setTimeout(() => msgArea.classList.remove('show'), duration);
         }
 
+        // (新) 特效
+        function showEffect(text) {
+            effectOverlay.textContent = text;
+            effectOverlay.style.animation = 'none';
+            effectOverlay.offsetHeight; /* 触发重绘 */
+            effectOverlay.style.animation = 'effect-fade-in-out 2s ease-in-out forwards';
+        }
+
         // --- 3. 路径助手 ---
         const paths = {
             room: (roomId) => `/artifacts/${appId}/public/data/gandengyan-rooms/${roomId}`,
@@ -701,7 +756,7 @@
                     cardCount: 0, 
                     score: initialScore 
                 }], 
-                status: "waiting", 
+                status: "waiting", // waiting, playing, drawing, finishing, finished
                 drawPile: [],
                 discardPile: [], 
                 lastPlayedCards: [], 
@@ -711,6 +766,8 @@
                 currentPlay: null,
                 currentPlayerIndex: 0,
                 isNewRound: true,
+                passMask: 0, // (新) pass 位掩码
+                drawMask: 0, // (新) draw 位掩码
                 log: [`房间 ${roomId} 已创建。`],
                 winner: null,
                 gameNumber: 1, 
@@ -804,7 +861,19 @@
                     }
                     return;
                 }
+                
+                const oldStatus = currentRoomData ? currentRoomData.status : null;
                 currentRoomData = docSnap.data(); 
+                
+                // (新) 触发特效
+                if ((oldStatus === "playing" || oldStatus === "drawing") && currentRoomData.bombCount > (currentRoomData.oldBombCount || 0)) {
+                    if(currentRoomData.currentPlay && currentRoomData.currentPlay.type === PLAY_TYPE.ROCKET) {
+                         showEffect("王炸!! 🚀");
+                    } else {
+                         showEffect("BOMB!! 💣");
+                    }
+                }
+                
                 renderGameState(currentRoomData);
             }, (error) => {
                 console.error("Room subscription error:", error);
@@ -826,7 +895,7 @@
             const roomSnap = await getDoc(roomRef);
             if(roomSnap.exists()) {
                 const status = roomSnap.data().status;
-                if(status === "playing" || status === "finishing") {
+                if(status === "playing" || status === "finishing" || status === "drawing") {
                     showScreen('game-board');
                 } else if (status === "finished") {
                     showScreen('game-board'); 
@@ -934,7 +1003,7 @@
                     startBtn.classList.add('hidden');
                 }
                 
-            } else if (roomData.status === "playing" || roomData.status === "finishing") {
+            } else if (roomData.status === "playing" || roomData.status === "finishing" || roomData.status === "drawing") {
                 if (window.location.search.includes('room=')) {
                     window.history.pushState({}, '', window.location.pathname);
                 }
@@ -970,7 +1039,6 @@
                     displayMap[3] = areas[3];
                 }
                 
-                // (新) 清空所有出牌区
                 areas.forEach(a => {
                     const playAreaEl = document.getElementById(a.playAreaEl);
                     if (playAreaEl) playAreaEl.innerHTML = '';
@@ -990,23 +1058,30 @@
                     areaEl.classList.remove('hidden'); 
                     infoEl.textContent = `${player.name} (${player.cardCount} 张) | ${player.score} 分`; 
                     
+                    areaEl.classList.remove('active', 'drawing');
                     if (i === roomData.currentPlayerIndex) {
-                        areaEl.classList.add('active');
-                    } else {
-                        areaEl.classList.remove('active');
+                        if (roomData.status === 'drawing') {
+                            areaEl.classList.add('drawing');
+                        } else {
+                            areaEl.classList.add('active');
+                        }
                     }
-                    
-                    // (新) 渲染每个玩家的出牌区
+
                     const playAreaEl = document.getElementById(area.playAreaEl);
                     const playerPlay = roomData.playerPlays ? roomData.playerPlays[player.uid] : null;
                     if (playerPlay && playerPlay.displayCards) {
                         playerPlay.displayCards.forEach(card => {
                             playAreaEl.appendChild(createCardElement(card));
                         });
+                    } else if (playerPlay && playerPlay.passed) {
+                         // (新) 显示 PASS
+                        const passCard = document.createElement('div');
+                        passCard.className = 'card pass-card';
+                        passCard.textContent = 'PASS';
+                        playAreaEl.appendChild(passCard);
                     }
 
                     if (relativeIndex !== 0) { 
-                        // (新) 堆叠手牌
                         const handContainer = document.getElementById(area.handEl);
                         handContainer.innerHTML = '';
                         if (player.cardCount > 0) {
@@ -1015,18 +1090,16 @@
                     }
                 }
                 
-                document.getElementById('draw-pile-count').textContent = `剩余: ${roomData.drawPile.length}`;
+                document.getElementById('draw-pile-count').textContent = `剩余: ${roomData.drawPile.length + roomData.discardPile.length}`;
                 const realBaseBet = (roomData.baseBet || 100) * Math.pow(2, roomData.bombCount || 0);
                 document.getElementById('base-bet-display').textContent = realBaseBet; 
                 
-                // 按钮逻辑
                 const isMyTurn = roomData.currentPlayerIndex === myPlayerIndex;
-                const isNewRound = roomData.isNewRound;
-                const isGameStart = (roomData.lastPlayerId === null); 
                 
                 if (roomData.status === "finishing") {
                     playButton.disabled = true;
-                    passDrawButton.disabled = true;
+                    passButton.disabled = true;
+                    drawButton.classList.add('hidden');
                     const winnerName = roomData.players.find(p => p.uid === roomData.winner)?.name || "??";
                     showMessage(`${winnerName} 赢了! 5秒后结算...`, 4500);
 
@@ -1038,36 +1111,40 @@
                     return; 
                 }
                 
-                
-                if (isMyTurn && isNewRound && !isGameStart) {
+                // (新) 摸牌阶段
+                if (roomData.status === "drawing") {
                     playButton.disabled = true;
-                    passDrawButton.disabled = false;
+                    passButton.disabled = true;
                     
-                    if (roomData.drawPile.length === 0 && roomData.discardPile.length === 0) {
-                         passDrawButton.textContent = '无法摸牌 (跳过)';
+                    const myDrawBit = 1 << myPlayerIndex;
+                    const hasDrawn = (roomData.drawMask & myDrawBit) > 0;
+                    
+                    if (isMyTurn && !hasDrawn) {
+                        drawButton.classList.remove('hidden');
+                        drawButton.disabled = false;
+                        const drawnCount = (roomData.drawMask.toString(2).match(/1/g) || []).length;
+                        drawButton.textContent = `摸牌 (${drawnCount + 1}/${numPlayers})`;
                     } else {
-                        passDrawButton.textContent = '摸牌 (新回合)';
+                        drawButton.classList.add('hidden');
+                        drawButton.disabled = true;
                     }
+                } 
+                // (新) 出牌阶段
+                else if (roomData.status === "playing") {
+                    drawButton.classList.add('hidden');
                     
-                } else if (isMyTurn && (!isNewRound || isGameStart)) {
-                    playButton.disabled = false;
-                    passDrawButton.disabled = false;
-                    
-                    if (roomData.drawPile.length === 0 && roomData.discardPile.length === 0) {
-                        passDrawButton.textContent = '过 (Pass)';
+                    if (isMyTurn) {
+                        playButton.disabled = false;
+                        passButton.disabled = false;
                     } else {
-                        passDrawButton.textContent = '摸牌 / 过';
+                        playButton.disabled = true;
+                        passButton.disabled = true;
                     }
                     
-                    const isFreePlayAfterDraw = !isNewRound && roomData.currentPlay === null;
-                    if (isFreePlayAfterDraw && !isGameStart) {
-                        passDrawButton.disabled = true; 
-                        showMessage("你必须出牌 (新回合)", 1500);
+                    // (新) 新回合必须出牌, 不能"过"
+                    if (isMyTurn && roomData.isNewRound) {
+                        passButton.disabled = true;
                     }
-
-                } else {
-                    playButton.disabled = true;
-                    passDrawButton.disabled = true;
                 }
 
 
@@ -1109,8 +1186,6 @@
                 } else {
                     nextGameBtn.classList.add('hidden');
                 }
-                
-                // (修复) 保持订阅, 不再调用 joinRoom
             }
         }
         
@@ -1167,35 +1242,21 @@
                 }
 
                 if (card.value === BIG_JOKER_VALUE) {
-                    // (新) SVG 大王
+                    // (新) SVG 大王 (移除 J)
                     cardDiv.innerHTML = `
-                        <div class="rank">J</div>
-                        <div class="joker-text joker-text-left">JOKER</div>
+                        <div class="joker-text joker-text-left" style="color: #EF4444;">JOKER</div>
                         <div class="joker-svg">
-                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M50 10 C 40 10, 30 20, 30 30 S 40 50, 50 50 S 70 40, 70 30 S 60 10, 50 10 Z" fill="#FFD700"/>
-                                <circle cx="40" cy="30" r="5" fill="#3B82F6"/>
-                                <circle cx="60" cy="30" r="5" fill="#EF4444"/>
-                                <path d="M40 40 Q 50 50, 60 40" stroke="#1F2937" stroke-width="3" fill="none"/>
-                            </svg>
+                           <svg viewBox="-2 -2 24 24" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" fill="none"><path d="M10 20C15.5228 20 20 15.5228 20 10C20 4.47715 15.5228 0 10 0C4.47715 0 0 4.47715 0 10C0 15.5228 4.47715 20 10 20Z" fill="#FFD700"></path><path d="M10 18C14.4183 18 18 14.4183 18 10C18 5.58172 14.4183 2 10 2C5.58172 2 2 5.58172 2 10C2 14.4183 5.58172 18 10 18Z" fill="#F7B239"></path><path d="M10 16C13.3137 16 16 13.3137 16 10C16 6.68629 13.3137 4 10 4C6.68629 4 4 6.68629 4 10C4 13.3137 6.68629 16 10 16Z" fill="#FFFFFF"></path><path d="M14 10C14 12.2091 12.2091 14 10 14C7.79086 14 6 12.2091 6 10C6 7.79086 7.79086 6 10 6C12.2091 6 14 7.79086 14 10Z" fill="#FBD248"></path><path d="M10 4C10.42 4 10.82 4.07 11.2 4.2C11.13 3.62 10.96 3.06 10.72 2.54C10.48 2.2 10.25 1.88 10 1.58C9.75 1.88 9.52 2.2 9.28 2.54C9.04 3.06 8.87 3.62 8.8 4.2C9.18 4.07 9.58 4 10 4Z" fill="#EF4444"></path><path d="M7 6C7.32 6 7.62 6.13 7.85 6.35C7.45 6.17 7.02 6.04 6.57 5.96C6.12 5.88 5.67 5.84 5.21 5.84C4.1 5.84 3.06 6.13 2.18 6.66C2.52 6.38 2.89 6.16 3.3 6.02C3.89 5.84 4.53 5.75 5.21 5.75C5.83 5.75 6.42 5.84 7 6Z" fill="#3B82F6"></path><path d="M13 6C12.68 6 12.38 6.13 12.15 6.35C12.55 6.17 12.98 6.04 13.43 5.96C13.88 5.88 14.33 5.84 14.79 5.84C15.9 5.84 16.94 6.13 17.82 6.66C17.48 6.38 17.11 6.16 16.7 6.02C16.11 5.84 15.47 5.75 14.79 5.75C14.17 5.75 13.58 5.84 13 6Z" fill="#3B82F6"></path><path d="M11 11C11 11.5523 10.5523 12 10 12C9.44772 12 9 11.5523 9 11C9 10.4477 9.44772 10 10 10C10.5523 10 11 10.4477 11 11Z" fill="#EF4444"></path><path d="M15 10C15 10.5523 14.5523 11 14 11C13.4477 11 13 10.5523 13 10C13 9.44772 13.4477 9 14 9C14.5523 9 15 9.44772 15 10Z" fill="#1F2937"></path><path d="M7 10C7 10.5523 6.55228 11 6 11C5.44772 11 5 10.5523 5 10C5 9.44772 5.44772 9 6 9C6.55228 9 7 9.44772 7 10Z" fill="#1F2937"></path></svg>
                         </div>
-                        <div class="joker-text joker-text-right">JOKER</div>
-                        <div class="rank bottom">J</div>`;
+                        <div class="joker-text joker-text-right" style="color: #EF4444;">JOKER</div>`;
                 } else if (card.value === SMALL_JOKER_VALUE) {
-                    // (新) SVG 小王
+                    // (新) SVG 小王 (移除 J)
                     cardDiv.innerHTML = `
-                        <div class="rank">J</div>
                         <div class="joker-text joker-text-left">JOKER</div>
                         <div class="joker-svg">
-                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M50 10 C 40 10, 30 20, 30 30 S 40 50, 50 50 S 70 40, 70 30 S 60 10, 50 10 Z" fill="#6B7280"/>
-                                <circle cx="40" cy="30" r="5" fill="black"/>
-                                <circle cx="60" cy="30" r="5" fill="black"/>
-                                <path d="M40 40 Q 50 50, 60 40" stroke="#1F2937" stroke-width="3" fill="none"/>
-                            </svg>
+                            <svg viewBox="-2 -2 24 24" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" fill="none"><path d="M10 20C15.5228 20 20 15.5228 20 10C20 4.47715 15.5228 0 10 0C4.47715 0 0 4.47715 0 10C0 15.5228 4.47715 20 10 20Z" fill="#6B7280"></path><path d="M10 18C14.4183 18 18 14.4183 18 10C18 5.58172 14.4183 2 10 2C5.58172 2 2 5.58172 2 10C2 14.4183 5.58172 18 10 18Z" fill="#4B5563"></path><path d="M10 16C13.3137 16 16 13.3137 16 10C16 6.68629 13.3137 4 10 4C6.68629 4 4 6.68629 4 10C4 13.3137 6.68629 16 10 16Z" fill="#FFFFFF"></path><path d="M14 10C14 12.2091 12.2091 14 10 14C7.79086 14 6 12.2091 6 10C6 7.79086 7.79086 6 10 6C12.2091 6 14 7.79086 14 10Z" fill="#D1D5DB"></path><path d="M10 4C10.42 4 10.82 4.07 11.2 4.2C11.13 3.62 10.96 3.06 10.72 2.54C10.48 2.2 10.25 1.88 10 1.58C9.75 1.88 9.52 2.2 9.28 2.54C9.04 3.06 8.87 3.62 8.8 4.2C9.18 4.07 9.58 4 10 4Z" fill="#1F2937"></path><path d="M7 6C7.32 6 7.62 6.13 7.85 6.35C7.45 6.17 7.02 6.04 6.57 5.96C6.12 5.88 5.67 5.84 5.21 5.84C4.1 5.84 3.06 6.13 2.18 6.66C2.52 6.38 2.89 6.16 3.3 6.02C3.89 5.84 4.53 5.75 5.21 5.75C5.83 5.75 6.42 5.84 7 6Z" fill="#1F2937"></path><path d="M13 6C12.68 6 12.38 6.13 12.15 6.35C12.55 6.17 12.98 6.04 13.43 5.96C13.88 5.88 14.33 5.84 14.79 5.84C15.9 5.84 16.94 6.13 17.82 6.66C17.48 6.38 17.11 6.16 16.7 6.02C16.11 5.84 15.47 5.75 14.79 5.75C14.17 5.75 13.58 5.84 13 6Z" fill="#1F2937"></path><path d="M11 11C11 11.5523 10.5523 12 10 12C9.44772 12 9 11.5523 9 11C9 10.4477 9.44772 10 10 10C10.5523 10 11 10.4477 11 11Z" fill="#1F2937"></path><path d="M15 10C15 10.5523 14.5523 11 14 11C13.4477 11 13 10.5523 13 10C13 9.44772 13.4477 9 14 9C14.5523 9 15 9.44772 15 10Z" fill="#1F2937"></path><path d="M7 10C7 10.5523 6.55228 11 6 11C5.44772 11 5 10.5523 5 10C5 9.44772 5.44772 9 6 9C6.55228 9 7 9.44772 7 10Z" fill="#1F2937"></path></svg>
                         </div>
-                        <div class="joker-text joker-text-right">JOKER</div>
-                        <div class="rank bottom">J</div>`;
+                        <div class="joker-text joker-text-right">JOKER</div>`;
                 } else {
                     cardDiv.dataset.suit = card.suit;
                     cardDiv.innerHTML = `
@@ -1237,7 +1298,10 @@
             let deck = [];
             for (const suit of SUITS) {
                 for (const rank of RANKS) { deck.push({ suit, rank, value: RANK_VALUES[rank] }); }
-                deck.push({ suit, rank: '2', value: LAIZI_2_VALUE });
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
             }
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
@@ -1307,17 +1371,20 @@
                     isNewRound: true,
                     lastPlayedCards: [],
                     displayCards: [], 
-                    playerPlays: {}, // (新)
+                    playerPlays: {}, 
                     lastPlayerId: null, 
                     currentPlay: null,
+                    passMask: 0, 
+                    drawMask: 0, 
                     log: arrayUnion(`第 ${ (roomData.gameNumber || 1) + 1 } 局游戏开始！`),
                     winner: null,
                     bombCount: 0,
+                    oldBombCount: 0,
                     baseBet: roomData.baseBet, 
                     initialScore: roomData.initialScore, 
                     playHistory: [], 
                     gameNumber: (roomData.gameNumber || 1) + 1,
-                    oldPlayers: roomData.players // (新) 保存上一局的玩家数据（含积分）
+                    oldPlayers: roomData.players 
                 });
                 
                 await batch.commit();
@@ -1345,7 +1412,7 @@
                 const finalBet = baseBet * bombMultiplier * springMultiplier;
                 
                 if (isSpring) {
-                    showMessage(`春天! 底分 x2`, 4000);
+                    showEffect("春天!! 🌸");
                 }
 
                 let totalGain = 0;
@@ -1399,7 +1466,10 @@
             let deck = [];
             for (const suit of SUITS) {
                 for (const rank of RANKS) { deck.push({ suit, rank, value: RANK_VALUES[rank] }); }
-                deck.push({ suit, rank: '2', value: LAIZI_2_VALUE });
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
             }
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
@@ -1466,11 +1536,14 @@
                     isNewRound: true,
                     lastPlayedCards: [],
                     displayCards: [], 
-                    playerPlays: {}, // (新)
+                    playerPlays: {}, 
                     lastPlayerId: null, 
                     currentPlay: null,
-                    log: arrayUnion(`游戏开始！${players[firstPlayerIndex].name} (有最小牌) 先出。`),
-                    bombCount: 0, 
+                    passMask: 0, 
+                    drawMask: 0, 
+                    log: arrayUnion(`游戏开始！${players[firstPlayerIndex].name} (有${smallestCard.rank}${smallestCard.suit}) 先出。`),
+                    bombCount: 0,
+                    oldBombCount: 0,
                     baseBet: roomData.baseBet, 
                     initialScore: roomData.initialScore, 
                     playHistory: [], 
@@ -1501,7 +1574,6 @@
                     const displayCardIds = displayCards.map(c => (c.suit || '') + c.rank);
                     
                     if (!displayCardIds.includes(smallestCardId)) {
-                        // (新) 检查原始牌
                         const playedCardIds = selectedCards.map(c => (c.suit || '') + c.rank);
                         if (!playedCardIds.includes(smallestCardId)) {
                              btn.disabled = true; // 禁用不包含最小牌的选项
@@ -1520,7 +1592,6 @@
             laiziChoiceModal.classList.remove('hidden');
         }
 
-        // (新) 出牌按钮重构
         playButton.onclick = async () => {
             if (selectedIndices.length === 0) {
                 showMessage("请选择要出的牌");
@@ -1532,17 +1603,10 @@
 
             const selectedCards = selectedIndices.map(i => localHand[i]).sort((a, b) => a.value - b.value);
             
-            const roomData = currentRoomData; // 使用缓存的数据
+            const roomData = currentRoomData; 
             const isGameStart = (roomData.lastPlayerId === null);
             const isFreePlay = isGameStart || roomData.isNewRound;
             
-            if (isFreePlay && !isGameStart) {
-                 showMessage("在新回合，你必须先摸牌！");
-                 playButton.disabled = false;
-                 return;
-            }
-            
-            // (新) 查找所有可能的牌型
             const allPlays = findAllPossiblePlays(selectedCards);
             const validPlays = allPlays.filter(p => isValidPlay(p, roomData.currentPlay, isFreePlay));
 
@@ -1552,15 +1616,12 @@
                 return;
             }
             
-            // (新) 检查第一回合是否包含最小牌
             if (isGameStart && roomData.currentPlayerIndex === roomData.smallestCardPlayerIndex) {
                 const smallestCard = roomData.smallestCard;
                 const smallestCardId = (smallestCard.suit || '') + smallestCard.rank;
                 const playedCardIds = selectedCards.map(c => (c.suit || '') + c.rank);
                 
-                // 检查原始牌是否包含
                 if (!playedCardIds.includes(smallestCardId)) {
-                    // 检查所有可能的癞子组合是否包含
                      const validPlaysWithSmallest = validPlays.filter(play => {
                         const displayCards = getDisplayCards(selectedCards, play);
                         const displayCardIds = displayCards.map(c => (c.suit || '') + c.rank);
@@ -1585,12 +1646,10 @@
             if (validPlays.length === 1) {
                 executePlay(validPlays[0], selectedCards);
             } else {
-                // (新) 弹出癞子选择
                 showLaiziChoice(validPlays, selectedCards, isGameStart, roomData.smallestCard);
             }
         };
 
-        // (新) 真正的出牌执行函数
         async function executePlay(playInfo, selectedCards) {
             if (!currentRoomId || !appId) return;
             
@@ -1669,24 +1728,26 @@
                     const updatedPlayers = [...roomData.players];
                     updatedPlayers[myPlayerIndex].cardCount = newHand.length;
                     
-                    // (新) 更新玩家出牌区
-                    const newPlayerPlays = { ...roomData.playerPlays };
+                    const newPlayerPlays = {};
                     newPlayerPlays[userId] = { displayCards: displayCards };
 
                     transaction.update(roomRef, {
                         lastPlayedCards: selectedCards,
                         displayCards: displayCards, 
-                        playerPlays: newPlayerPlays, // (新)
+                        playerPlays: newPlayerPlays,
                         discardPile: arrayUnion(...selectedCards), 
                         currentPlay: finalPlayInfo, 
                         lastPlayerId: userId, 
                         playHistory: arrayUnion(userId), 
                         isNewRound: false, 
+                        passMask: 0, 
+                        drawMask: 0, 
                         currentPlayerIndex: newPlayerIndex,
                         players: updatedPlayers,
                         status: newStatus,
                         winner: winner,
                         bombCount: newBombCount, 
+                        oldBombCount: roomData.bombCount,
                         log: arrayUnion(`${roomData.players[myPlayerIndex].name} 出牌了。`)
                     });
                 });
@@ -1700,9 +1761,76 @@
             }
         }
         
-        passDrawButton.onclick = async () => {
+        passButton.onclick = async () => {
             if (!currentRoomId || !appId) return;
-            passDrawButton.disabled = true; 
+            passButton.disabled = true; 
+            
+            const roomRef = doc(db, paths.room(currentRoomId));
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(roomRef);
+                    if (!roomSnap.exists()) throw new Error("房间不存在");
+                    
+                    const roomData = roomSnap.data();
+                    if (roomData.status !== "playing") throw new Error("游戏未在进行");
+                    if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
+                    
+                    const numPlayers = roomData.players.length;
+                    const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
+                    const myPassBit = 1 << myPlayerIndex;
+                    const newPassMask = (roomData.passMask || 0) | myPassBit;
+                    
+                    const newPlayerPlays = { ...roomData.playerPlays };
+                    newPlayerPlays[userId] = { passed: true }; 
+
+                    let allOthersPassed = true;
+                    for(let i=0; i < numPlayers; i++) {
+                        if (i === myPlayerIndex) continue;
+                        if (roomData.players[i].uid === roomData.lastPlayerId) continue; 
+                        
+                        const playerBit = 1 << i;
+                        if ((newPassMask & playerBit) === 0) {
+                            allOthersPassed = false;
+                            break;
+                        }
+                    }
+                    
+                    const nextPlayerIsLastPlayer = (roomData.lastPlayerId !== null && roomData.players[newPlayerIndex].uid === roomData.lastPlayerId);
+                    
+                    if (nextPlayerIsLastPlayer || (allOthersPassed && roomData.lastPlayerId !== null)) {
+                        // (新) 进入摸牌阶段
+                        transaction.update(roomRef, {
+                            status: "drawing",
+                            currentPlayerIndex: roomData.lastPlayerId ? roomData.players.findIndex(p => p.uid === roomData.lastPlayerId) : 0, // 从最后出牌者开始摸
+                            passMask: 0,
+                            drawMask: 0,
+                            playerPlays: newPlayerPlays,
+                            log: arrayUnion(`${roomData.players[myPlayerIndex].name} '过'了。回合结束，开始摸牌。`)
+                        });
+                        
+                    } else {
+                        // (新) 继续传给下家
+                        transaction.update(roomRef, {
+                            currentPlayerIndex: newPlayerIndex,
+                            passMask: newPassMask,
+                            playerPlays: newPlayerPlays,
+                            log: arrayUnion(`${roomData.players[myPlayerIndex].name} '过'了。`)
+                        });
+                    }
+                });
+                
+                selectedIndices = [];
+                
+            } catch (error) {
+                console.error("Pass Error:", error);
+                passButton.disabled = false; 
+            }
+        };
+
+        drawButton.onclick = async () => {
+            if (!currentRoomId || !appId) return;
+            drawButton.disabled = true; 
             
             const roomRef = doc(db, paths.room(currentRoomId));
             const handRef = doc(db, paths.hand(currentRoomId, userId));
@@ -1715,12 +1843,10 @@
                     if (!roomSnap.exists() || !handSnap.exists()) throw new Error("房间或手牌不存在");
                     
                     const roomData = roomSnap.data();
-                    const handData = handSnap.data();
+                    if (roomData.status !== "drawing") throw new Error("不在摸牌阶段");
+                    if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你摸牌");
+                    
                     const numPlayers = roomData.players.length;
-                    
-                    if (roomData.status !== "playing") throw new Error("游戏未在进行");
-                    if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你");
-                    
                     const newHand = [...handData.cards];
                     let newDrawPile = [...roomData.drawPile];
                     let newDiscardPile = [...roomData.discardPile];
@@ -1743,54 +1869,56 @@
                     }
                     
                     transaction.set(handRef, { cards: newHand });
+                    
                     const updatedPlayers = [...roomData.players];
                     updatedPlayers[myPlayerIndex].cardCount = newHand.length;
                     
-                    if (roomData.isNewRound) {
-                        logMsg = `${roomData.players[myPlayerIndex].name} 摸了一张牌 (新回合) ${logMsg}。`;
-                        
-                        transaction.update(roomRef, {
-                            drawPile: newDrawPile,
-                            discardPile: newDiscardPile,
-                            players: updatedPlayers,
-                            isNewRound: false, 
-                            currentPlay: null, 
-                            playerPlays: {}, // (新) 清空所有玩家的出牌
-                            log: arrayUnion(logMsg)
-                        });
-                        
-                    } else {
-                        logMsg = `${roomData.players[myPlayerIndex].name} ${drawnCard ? '摸牌并' : ''}'过'了 ${logMsg}。`;
-                        
-                        const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
-                        
-                        const nextPlayerUid = roomData.players[newPlayerIndex].uid;
-                        const nextPlayerIsNewRound = (roomData.lastPlayerId !== null && nextPlayerUid === roomData.lastPlayerId);
-                        
-                        // (新) 当一圈人“过”时，清除出牌区
-                        const newPlayerPlays = nextPlayerIsNewRound ? {} : { ...roomData.playerPlays };
-                        // (新) 清除自己的出牌区
-                        if (newPlayerPlays[userId]) {
-                            delete newPlayerPlays[userId];
+                    const myDrawBit = 1 << myPlayerIndex;
+                    const newDrawMask = (roomData.drawMask || 0) | myDrawBit;
+                    const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
+                    
+                    logMsg = `${roomData.players[myPlayerIndex].name} 摸了一张牌 ${logMsg}。`;
+                    
+                    // (新) 检查是否所有人都摸完了
+                    let allPlayersDrawn = true;
+                    for(let i=0; i < numPlayers; i++) {
+                        const playerBit = 1 << i;
+                        if ((newDrawMask & playerBit) === 0) {
+                            allPlayersDrawn = false;
+                            break;
                         }
-
+                    }
+                    
+                    if (allPlayersDrawn) {
+                        // (新) 摸牌结束, 开始新回合
                         transaction.update(roomRef, {
+                            status: "playing",
+                            currentPlayerIndex: roomData.players.findIndex(p => p.uid === roomData.lastPlayerId), // 回到最后出牌者
+                            isNewRound: true, // (新)
+                            currentPlay: null,
+                            playerPlays: {}, 
                             drawPile: newDrawPile,
                             discardPile: newDiscardPile,
                             players: updatedPlayers,
+                            drawMask: newDrawMask,
+                            log: arrayUnion(logMsg + " 摸牌结束，新回合开始。")
+                        });
+                    } else {
+                        // (新) 轮到下家摸牌
+                        transaction.update(roomRef, {
                             currentPlayerIndex: newPlayerIndex,
-                            isNewRound: nextPlayerIsNewRound, 
-                            playerPlays: newPlayerPlays, // (新)
+                            drawPile: newDrawPile,
+                            discardPile: newDiscardPile,
+                            players: updatedPlayers,
+                            drawMask: newDrawMask,
                             log: arrayUnion(logMsg)
                         });
                     }
                 });
                 
-                selectedIndices = [];
-                
             } catch (error) {
-                console.error("Pass/Draw Error:", error);
-                showMessage(error.message);
+                 console.error("Draw Error:", error);
+                 drawButton.disabled = false;
             }
         };
         
@@ -1914,7 +2042,6 @@
         }
 
 
-        // (新) 重构: 查找所有可能的牌型
         function findAllPossiblePlays(cards) {
             if (!cards || cards.length === 0) return [];
 
@@ -1981,14 +2108,11 @@
             return possiblePlays;
         }
         
-        // (新) getPlayType 现在只返回第一个可能
         function getPlayType(cards) {
              const plays = findAllPossiblePlays(cards);
              return plays.length > 0 ? plays[0] : { type: PLAY_TYPE.INVALID };
         }
         
-        // --- 牌型查找辅助函数 (新) ---
-
         function findBomb(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 4) return null;
             if (regulars.length === 0) return { value: 3 }; 
@@ -1996,11 +2120,16 @@
             const valueCounts = {};
             regulars.forEach(c => { valueCounts[c.value] = (valueCounts[c.value] || 0) + 1; });
             
-            for (const value in valueCounts) {
+            for (const value of Object.keys(valueCounts).map(Number).sort((a,b) => a-b)) {
                 if (valueCounts[value] + laiziCount >= 4) {
-                    return { value: parseInt(value, 10) };
+                    return { value: value };
                 }
             }
+            
+            if (regulars.length === 0) {
+                 return { value: 3 }; // (新) 4 癞子, 默认当 3333
+            }
+            
             return null; 
         }
 
@@ -2037,7 +2166,6 @@
             return null;
         }
         
-        // (新) 查找所有顺子
         function findAllStraights(regulars, laiziCount, totalLength) {
             let possibleStraights = [];
             if (regulars.length === 0 && laiziCount >= totalLength) {
@@ -2052,7 +2180,6 @@
             
             const minReg = uniqueValues.length > 0 ? uniqueValues[0] : LAIZI_2_VALUE;
             
-            // (新) 迭代所有可能的起始点
             const maxPossibleStart = minReg;
             const minPossibleStart = Math.max(3, minReg - laiziCount); 
 
@@ -2075,11 +2202,11 @@
             return possibleStraights; 
         }
         
-        // (新) 查找所有连对
         function findAllConsecutivePairs(regulars, laiziCount, totalLength) {
             let possiblePairs = [];
             const numPairs = totalLength / 2;
-            if (numPairs < 2) return [];
+            if (numPairs < 2 || totalLength % 2 !== 0) return [];
+            
             if (regulars.length === 0 && laiziCount >= totalLength) {
                 possiblePairs.push({ value: 3 });
                 return possiblePairs;
@@ -2090,11 +2217,26 @@
             
             if (regulars.some(c => c.value >= LAIZI_2_VALUE)) return []; 
             
-            const uniqueValues = [...new Set(regulars.map(c => c.value))];
-            uniqueValues.sort((a, b) => a - b);
+            const uniqueValues = [...new Set(regulars.map(c => c.value))].sort((a, b) => a - b);
             const minReg = uniqueValues.length > 0 ? uniqueValues[0] : LAIZI_2_VALUE;
 
-            const maxPossibleStart = minReg;
+            // (新) 4422 -> 3344 (startVal=3) or 4455 (startVal=4)
+            // (新) 迭代所有可能的起始点
+            let maxPossibleStart = minReg;
+            if (uniqueValues.length > 0) {
+                 // 4422, minReg=4, laizi=2, numPairs=2. maxStart=4
+                 // minStart=max(3, 4 - 2) = 3
+                 // 迭代 3, 4
+                 maxPossibleStart = minReg;
+                 
+                 // 如果全是癞子, maxPossibleStart = 3
+                 // 如果有 44, laizi=2, total=4. maxStart=4. minStart=max(3, 4-2) = 3
+                 // 
+                 const maxReg = uniqueValues[uniqueValues.length - 1];
+                 const minPossibleEnd = maxReg; // 最小的终点
+                 const maxPossibleStartFromEnd = minPossibleEnd - numPairs + 1;
+                 maxPossibleStart = Math.max(minReg, maxPossibleStartFromEnd + laiziCount);
+            }
             const minPossibleStart = Math.max(3, minReg - laiziCount); 
 
             for (let startVal = minPossibleStart; startVal <= maxPossibleStart; startVal++) {
@@ -2161,14 +2303,17 @@
                 lastPlay.type === PLAY_TYPE.SINGLE &&
                 lastPlay.value < BIG_JOKER_VALUE)
             {
+                // (新) 癞子不能代替癞子
+                if (LAIZI_VALUES.includes(lastPlay.value + 1)) {
+                    return false;
+                }
                 return true;
             }
 
             if (playInfo.type === PLAY_TYPE.CONSECUTIVE_PAIRS) {
                 if (lastPlay.type !== PLAY_TYPE.CONSECUTIVE_PAIRS) return false;
                 if (playInfo.length !== lastPlay.length) return false;
-                // (新) 连对也允许 A(14) -> 2(15)
-                if (lastPlay.value === 14 && playInfo.value === 15) return true;
+                if (lastPlay.value === 14 && playInfo.value === 15) return false; // (新) 连对不能到2
                 return playInfo.value === lastPlay.value + 1;
             }
             if (lastPlay.type === PLAY_TYPE.CONSECUTIVE_PAIRS) return false; 
@@ -2180,10 +2325,18 @@
                 return false; 
             }
             
-            if (playInfo.type === PLAY_TYPE.PAIR && lastPlay.value === 14 && playInfo.value === 15) {
-                return true;
+            // (新) A(14) -> 2(15) -> S.Joker(16) -> B.Joker(17)
+            if (playInfo.type === PLAY_TYPE.PAIR) {
+                 if (lastPlay.value === 14 && playInfo.value === 15) return true; // AA -> 22
+                 if (lastPlay.value === 15 && playInfo.value === 16) return true; // 22 -> 小王对
+                 if (lastPlay.value === 16 && playInfo.value === 17) return true; // 小王对 -> 大王对
             }
-
+            if (playInfo.type === PLAY_TYPE.SINGLE) {
+                 if (lastPlay.value === 14 && playInfo.value === 15) return true; // A -> 2
+                 if (lastPlay.value === 15 && playInfo.value === 16) return true; // 2 -> 小王
+                 if (lastPlay.value === 16 && playInfo.value === 17) return true; // 小王 -> 大王
+            }
+            
             return playInfo.value === lastPlay.value + 1;
         }
 
