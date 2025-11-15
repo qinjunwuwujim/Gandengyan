@@ -1835,7 +1835,9 @@
             drawButton.disabled = true; 
             
             const roomRef = doc(db, paths.room(currentRoomId));
-            const handRef = doc(db, paths.hand(currentRoomId, userId));
+            // (修复) 必须获取当前玩家的手牌, 而不是 "我" 的手牌
+            const currentPlayerId = currentRoomData.players[currentRoomData.currentPlayerIndex].uid;
+            const handRef = doc(db, paths.hand(currentRoomId, currentPlayerId));
             
             try {
                 await runTransaction(db, async (transaction) => {
@@ -1846,10 +1848,11 @@
                     
                     const roomData = roomSnap.data();
                     if (roomData.status !== "drawing") throw new Error("不在摸牌阶段");
+                    // (修复) 检查 "我" 是不是当前玩家
                     if (roomData.players[roomData.currentPlayerIndex].uid !== userId) throw new Error("还没轮到你摸牌");
                     
                     const numPlayers = roomData.players.length;
-                    const newHand = [...handData.cards];
+                    const newHand = [...handSnap.data().cards]; // (修复) 从 handSnap 获取
                     let newDrawPile = [...roomData.drawPile];
                     let newDiscardPile = [...roomData.discardPile];
                     let logMsg = "";
@@ -1873,7 +1876,7 @@
                     transaction.set(handRef, { cards: newHand });
                     
                     const updatedPlayers = [...roomData.players];
-                    // (BUG修复) 必须更新当前玩家的牌数, 而不是 "我" 的牌数
+                    // (修复) 必须更新当前玩家的牌数
                     updatedPlayers[roomData.currentPlayerIndex].cardCount = newHand.length;
                     
                     // (修复) 使用 currentPlayerIndex 来设置 bit
@@ -1881,7 +1884,7 @@
                     const newDrawMask = (roomData.drawMask || 0) | currentPlayerBit;
                     const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
                     
-                    // (BUG修复) 必须显示当前玩家的日志, 而不是 "我" 的日志
+                    // (修复) 必须显示当前玩家的日志
                     logMsg = `${roomData.players[roomData.currentPlayerIndex].name} 摸了一张牌 ${logMsg}。`;
                     
                     // (新) 检查是否所有人都摸完了
@@ -1934,6 +1937,7 @@
             if (value === SMALL_JOKER_VALUE) return { suit: 'Joker', rank: 'Small', value: 16 };
             if (value === BIG_JOKER_VALUE) return { suit: 'Joker', rank: 'Big', value: 17 };
             const rank = RANKS.find(r => RANK_VALUES[r] === value);
+            // (修复) 癞子牌没有常规花色, 默认给一个
             return { suit: '♦', rank: rank, value: value }; 
         }
         
