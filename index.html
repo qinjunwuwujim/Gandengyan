@@ -787,7 +787,8 @@
                 initialScore: initialScore, 
                 playHistory: [], 
                 smallestCard: null, 
-                smallestCardPlayerIndex: 0 
+                smallestCardPlayerIndex: 0,
+                isSpring: false
             };
             
             try {
@@ -893,7 +894,7 @@
                     }
                 }
                 
-                // (新) 春天特效
+                // (新) 春天特效 (所有玩家可见)
                 if (oldWinner === null && currentRoomData.winner !== null && currentRoomData.isSpring === true) {
                     showEffect("春天!! 🌸");
                 }
@@ -1453,7 +1454,8 @@
                     initialScore: roomData.initialScore, 
                     playHistory: [], 
                     gameNumber: (roomData.gameNumber || 1) + 1,
-                    oldPlayers: roomData.players 
+                    oldPlayers: roomData.players,
+                    isSpring: false // (新) 重置春天
                 });
                 
                 await batch.commit();
@@ -1481,7 +1483,7 @@
                 const finalBet = baseBet * bombMultiplier * springMultiplier;
                 
                 if (isSpring && roomData.isSpring !== true) { // 确保只触发一次
-                    showEffect("春天!! 🌸");
+                    // (修复) 房主触发, 数据库记录, 其他人监听到
                 }
 
                 let totalGain = 0;
@@ -1618,6 +1620,7 @@
                     initialScore: roomData.initialScore, 
                     playHistory: [], 
                     gameNumber: 1, 
+                    isSpring: false // (新)
                 });
                 
                 await batch.commit();
@@ -1723,7 +1726,7 @@
         async function executePlay(playInfo, selectedCards) {
             if (!currentRoomId || !appId) return;
             
-            const playedCardIds = selectedCards.map(c => (c.suit || '') + c.rank); 
+            const playedCardIds = selectedCards.map(c => (c.suit || '') + (c.rank || '')); // (修复) JOKER 没有 suit
             const roomRef = doc(db, paths.room(currentRoomId));
             const handRef = doc(db, paths.hand(currentRoomId, userId));
 
@@ -1764,7 +1767,7 @@
                     
                     let idsToRemove = [...playedCardIds];
                     const newHand = handData.cards.filter(card => {
-                        const cardId = (card.suit || '') + card.rank;
+                        const cardId = (card.suit || '') + (card.rank || ''); // (修复) JOKER 没有 suit
                         const indexToRemove = idsToRemove.indexOf(cardId);
                         
                         if (indexToRemove > -1) {
@@ -2143,12 +2146,12 @@
             }
             
             if (len === 2) {
-                const pair = findPair(regulars, laiziCount);
+                const pair = findPair(regulars, laiziCount, laizi); // (修复) 传入 laizi
                 if (pair) possiblePlays.push({ type: PLAY_TYPE.PAIR, value: pair.value, cards: sortedCards, length: 2 });
             }
             
             if (len === 3) {
-                const trio = findTrio(regulars, laiziCount);
+                const trio = findTrio(regulars, laiziCount, laizi); // (修复) 传入 laizi
                 if (trio) possiblePlays.push({ type: PLAY_TYPE.TRIO, value: trio.value, cards: sortedCards, length: 3 });
                 
                 const straights = findAllStraights(regulars, laiziCount, len);
@@ -2156,7 +2159,7 @@
             }
             
             if (len === 4) {
-                const bomb = findBomb(regulars, laiziCount);
+                const bomb = findBomb(regulars, laiziCount, laizi); // (修复) 传入 laizi
                 if (bomb) possiblePlays.push({ type: PLAY_TYPE.BOMB, value: bomb.value, cards: sortedCards, length: 4 });
                 
                 const straights = findAllStraights(regulars, laiziCount, len);
@@ -2191,11 +2194,13 @@
              return plays.length > 0 ? plays[0] : { type: PLAY_TYPE.INVALID };
         }
         
-        function findBomb(regulars, laiziCount) {
+        function findBomb(regulars, laiziCount, laizi) {
             if (regulars.length + laiziCount !== 4) return null;
             if (regulars.length === 0) {
-                // (修复) 4 癞子, 默认当 3333
-                return { value: 3 }; 
+                // (修复) 检查4张癞子是否相同
+                const laiziValues = [...new Set(laizi.map(l => l.value))];
+                if (laiziValues.length === 1) return { value: laiziValues[0] };
+                return null; // (修复) 4张不同癞子不是炸弹
             }
 
             const valueCounts = {};
@@ -2213,8 +2218,8 @@
         function findFullHouse(regulars, laiziCount) {
             if (regulars.length + laiziCount !== 5) return null;
             if (regulars.length <= 1) {
-                // (修复) 5 癞子 (或 4 癞子+1常规), 默认当 33344
-                return { value: 3 }; 
+                // (修复) 5 癞子 (或 4 癞子+1常规)
+                return { value: 3 }; // 默认当 33344
             }
 
             const valueCounts = {};
@@ -2304,14 +2309,6 @@
             // (新) 迭代所有可能的起始点
             let maxPossibleStart = minReg;
             if (uniqueValues.length > 0) {
-                 // 4422, minReg=4, laizi=2, numPairs=2. maxStart=4
-                 // minStart=max(3, 4 - 2) = 3
-                 // 迭代 3, 4
-                 maxPossibleStart = minReg;
-                 
-                 // 如果全是癞子, maxPossibleStart = 3
-                 // 如果有 44, laizi=2, total=4. maxStart=4. minStart=max(3, 4-2) = 3
-                 // 
                  const maxReg = uniqueValues[uniqueValues.length - 1];
                  const minPossibleEnd = maxReg; // 最小的终点
                  const maxPossibleStartFromEnd = minPossibleEnd - numPairs + 1;
@@ -2336,13 +2333,13 @@
             return possiblePairs; 
         }
 
-        function findTrio(regulars, laiziCount) {
+        function findTrio(regulars, laiziCount, laizi) {
             if (regulars.length + laiziCount !== 3) return null;
             if (regulars.length === 0) {
-                // (修复) 3 癞子, 默认当 333, 或癞子对
+                // (修复) 3 癞子
                 const laiziValues = [...new Set(laizi.map(l => l.value))];
                 if (laiziValues.length === 1) return { value: laiziValues[0] };
-                return { value: 3 };
+                return null;
             }
             
             const firstVal = regulars[0].value;
@@ -2352,12 +2349,12 @@
             return null;
         }
 
-        function findPair(regulars, laiziCount) {
+        function findPair(regulars, laiziCount, laizi) {
             if (regulars.length + laiziCount !== 2) return null;
             if (regulars.length === 0) {
-                // (修复) 2 癞子, 可能是 22, 小王小王, 大王大王, 或 33
+                // (修复) 2 癞子
                 if (laizi[0].value === laizi[1].value) return { value: laizi[0].value };
-                return { value: 3 }; 
+                return null;
             }
             
             const firstVal = regulars[0].value;
@@ -2387,17 +2384,8 @@
                 return false; 
             }
             
-            if (playInfo.type === PLAY_TYPE.SINGLE &&
-                LAIZI_VALUES.includes(playInfo.value) &&
-                lastPlay.type === PLAY_TYPE.SINGLE &&
-                lastPlay.value < BIG_JOKER_VALUE)
-            {
-                // (新) 癞子不能代替癞子
-                if (LAIZI_VALUES.includes(lastPlay.value + 1)) {
-                    return false;
-                }
-                return true;
-            }
+            // (修复) 删除了错误的癞子代替逻辑
+            // if (playInfo.type === PLAY_TYPE.SINGLE && ... ) { ... }
 
             if (playInfo.type === PLAY_TYPE.CONSECUTIVE_PAIRS) {
                 if (lastPlay.type !== PLAY_TYPE.CONSECUTIVE_PAIRS) return false;
@@ -2417,8 +2405,7 @@
             // (新) A(14) -> 2(15) -> S.Joker(16) -> B.Joker(17)
             if (playInfo.type === PLAY_TYPE.PAIR) {
                  if (lastPlay.value === 14 && playInfo.value === 15) return true; // AA -> 22
-                 if (lastPlay.value === 15 && playInfo.value === 16) return true; // 22 -> 小王对
-                 if (lastPlay.value === 16 && playInfo.value === 17) return true; // 小王对 -> 大王对
+                 // (修复) 删除了 15->16 和 16->17
             }
             if (playInfo.type === PLAY_TYPE.SINGLE) {
                  if (lastPlay.value === 14 && playInfo.value === 15) return true; // A -> 2
