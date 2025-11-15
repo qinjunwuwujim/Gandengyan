@@ -1300,10 +1300,10 @@
             let deck = [];
             for (const suit of SUITS) {
                 for (const rank of RANKS) { deck.push({ suit, rank, value: RANK_VALUES[rank] }); }
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                // (修复) '2' 应该带花色
+                for (const suit of SUITS) {
+                    deck.push({ suit: suit, rank: '2', value: LAIZI_2_VALUE }); 
+                }
             }
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
@@ -1468,10 +1468,10 @@
             let deck = [];
             for (const suit of SUITS) {
                 for (const rank of RANKS) { deck.push({ suit, rank, value: RANK_VALUES[rank] }); }
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
-                deck.push({ suit: '2', rank: '2', value: LAIZI_2_VALUE }); 
+                // (修复) '2' 应该带花色
+                for (const suit of SUITS) {
+                    deck.push({ suit: suit, rank: '2', value: LAIZI_2_VALUE }); 
+                }
             }
             deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
             deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
@@ -1873,14 +1873,16 @@
                     transaction.set(handRef, { cards: newHand });
                     
                     const updatedPlayers = [...roomData.players];
-                    updatedPlayers[myPlayerIndex].cardCount = newHand.length;
+                    // (BUG修复) 必须更新当前玩家的牌数, 而不是 "我" 的牌数
+                    updatedPlayers[roomData.currentPlayerIndex].cardCount = newHand.length;
                     
                     // (修复) 使用 currentPlayerIndex 来设置 bit
                     const currentPlayerBit = 1 << roomData.currentPlayerIndex;
                     const newDrawMask = (roomData.drawMask || 0) | currentPlayerBit;
                     const newPlayerIndex = (roomData.currentPlayerIndex + 1) % numPlayers;
                     
-                    logMsg = `${roomData.players[myPlayerIndex].name} 摸了一张牌 ${logMsg}。`;
+                    // (BUG修复) 必须显示当前玩家的日志, 而不是 "我" 的日志
+                    logMsg = `${roomData.players[roomData.currentPlayerIndex].name} 摸了一张牌 ${logMsg}。`;
                     
                     // (新) 检查是否所有人都摸完了
                     let allPlayersDrawn = true;
