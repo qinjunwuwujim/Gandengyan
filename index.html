@@ -1358,6 +1358,23 @@
             }
             return array;
         }
+        
+        // (修复) 统一的牌组创建逻辑
+        function generateShuffledDeck() {
+            let deck = [];
+            for (const suit of SUITS) {
+                for (const rank of RANKS) { 
+                    deck.push({ suit, rank, value: RANK_VALUES[rank] }); 
+                }
+                // (修复) '2' 应该带花色
+                deck.push({ suit: suit, rank: '2', value: LAIZI_2_VALUE }); 
+            }
+            deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
+            deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
+            
+            // 54 张牌
+            return shuffleArray(deck);
+        }
 
         async function startNextGame(roomData) {
             if (roomData.hostId !== userId) return;
@@ -1365,18 +1382,7 @@
             const players = roomData.players;
             const numPlayers = players.length;
 
-            let deck = [];
-            for (const suit of SUITS) {
-                for (const rank of RANKS) { deck.push({ suit, rank, value: RANK_VALUES[rank] }); }
-                // (修复) '2' 应该带花色
-                for (const suit of SUITS) {
-                    deck.push({ suit: suit, rank: '2', value: LAIZI_2_VALUE }); 
-                }
-            }
-            deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
-            deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
-            
-            deck = shuffleArray(deck);
+            let deck = generateShuffledDeck(); // (修复)
             
             const hands = [];
             for (let i = 0; i < numPlayers; i++) hands.push([]);
@@ -1535,18 +1541,7 @@
                 return;
             }
             
-            let deck = [];
-            for (const suit of SUITS) {
-                for (const rank of RANKS) { deck.push({ suit, rank, value: RANK_VALUES[rank] }); }
-                // (修复) '2' 应该带花色
-                for (const suit of SUITS) {
-                    deck.push({ suit: suit, rank: '2', value: LAIZI_2_VALUE }); 
-                }
-            }
-            deck.push({ suit: 'Joker', rank: 'Small', value: SMALL_JOKER_VALUE });
-            deck.push({ suit: 'Joker', rank: 'Big', value: BIG_JOKER_VALUE });
-            
-            deck = shuffleArray(deck);
+            let deck = generateShuffledDeck(); // (修复)
             
             const hands = [];
             for (let i = 0; i < numPlayers; i++) hands.push([]);
@@ -1902,12 +1897,13 @@
         };
 
         drawButton.onclick = async () => {
-            if (!currentRoomId || !appId) return;
+            if (!currentRoomId || !appId || !currentRoomData) return;
             drawButton.disabled = true; 
             
             const roomRef = doc(db, paths.room(currentRoomId));
             // (修复) 必须获取当前玩家的手牌, 而不是 "我" 的手牌
-            const currentPlayerId = currentRoomData.players[currentRoomData.currentPlayerIndex].uid;
+            const currentPlayerIndex = currentRoomData.currentPlayerIndex;
+            const currentPlayerId = currentRoomData.players[currentPlayerIndex].uid;
             const handRef = doc(db, paths.hand(currentRoomId, currentPlayerId));
             
             try {
@@ -2384,8 +2380,30 @@
                 return false; 
             }
             
-            // (修复) 删除了错误的癞子代替逻辑
-            // if (playInfo.type === PLAY_TYPE.SINGLE && ... ) { ... }
+            // (修复) A -> 2 -> S.Joker -> B.Joker (单张)
+            if (playInfo.type === PLAY_TYPE.SINGLE) {
+                if (lastPlay.type === PLAY_TYPE.SINGLE) {
+                     // 1. 检查是否是癞子代替
+                     if (LAIZI_VALUES.includes(playInfo.value) && 
+                         lastPlay.value < BIG_JOKER_VALUE &&
+                         !LAIZI_VALUES.includes(lastPlay.value + 1)) // 确保不是用癞子代替另一个癞子
+                     {
+                        return true;
+                     }
+                     // 2. 检查是否是顺序
+                     if (lastPlay.value === 14 && playInfo.value === 15) return true; // A -> 2
+                     if (lastPlay.value === 15 && playInfo.value === 16) return true; // 2 -> 小王
+                     if (lastPlay.value === 16 && playInfo.value === 17) return true; // 小王 -> 大王
+                }
+            }
+            
+            // (修复) AA -> 22 (对子)
+            if (playInfo.type === PLAY_TYPE.PAIR) {
+                if (lastPlay.type === PLAY_TYPE.PAIR) {
+                     if (lastPlay.value === 14 && playInfo.value === 15) return true; // AA -> 22
+                }
+            }
+
 
             if (playInfo.type === PLAY_TYPE.CONSECUTIVE_PAIRS) {
                 if (lastPlay.type !== PLAY_TYPE.CONSECUTIVE_PAIRS) return false;
@@ -2400,17 +2418,6 @@
             
             if (lastPlay.value === BIG_JOKER_VALUE) { 
                 return false; 
-            }
-            
-            // (新) A(14) -> 2(15) -> S.Joker(16) -> B.Joker(17)
-            if (playInfo.type === PLAY_TYPE.PAIR) {
-                 if (lastPlay.value === 14 && playInfo.value === 15) return true; // AA -> 22
-                 // (修复) 删除了 15->16 和 16->17
-            }
-            if (playInfo.type === PLAY_TYPE.SINGLE) {
-                 if (lastPlay.value === 14 && playInfo.value === 15) return true; // A -> 2
-                 if (lastPlay.value === 15 && playInfo.value === 16) return true; // 2 -> 小王
-                 if (lastPlay.value === 16 && playInfo.value === 17) return true; // 小王 -> 大王
             }
             
             return playInfo.value === lastPlay.value + 1;
